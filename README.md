@@ -128,6 +128,30 @@ correct.
 The `SENSOR` row shows `LIVE` when the sensor works. It shows `ASLEEP` when
 the game finds the console but the sensor is off.
 
+## Set up the rear button
+
+Do this at the same time as the gyro. It is not necessary, but the mod is
+much easier to use with it.
+
+The rear button makes the light centre where you hold the console. Without
+it, you must open the menu each time you change position.
+
+1. Push the STEAM button.
+2. Select the controller settings for this game.
+3. Open **Edit Layout**.
+4. Select the **Back Grip Buttons** group.
+5. Select **L4**.
+6. Set the command to the **Left Ctrl** key.
+
+The author tested L4. Any rear button works. The game uses no rear button, so
+this takes nothing away.
+
+Push that button at any time to centre the light. The `RC` counter on the
+`AXIS MAP` page increases at each push. Use that counter to confirm that
+Steam sends the key.
+
+To turn this off, set `QUICK CENTRE` to `OFF`.
+
 ## Options
 
 Open `OPTIONS`, then select `SD-GYRO`. Push **SELECT** on a row to read a full
@@ -175,9 +199,8 @@ angle.
 The result is the same in each body position. You can sit, lie down, or hold
 the console upside down. Press `RECENTRE` in that position, then tilt.
 
-`QUICK CENTRE` does the same with a button. Assign the LEFT CONTROL key to a
-rear button in the Steam controller settings. The game does not use the rear
-buttons.
+`QUICK CENTRE` does the same from a rear button, at any time, without the
+menu. See **Set up the rear button**.
 
 ## How the mod reads the sensor
 
