@@ -1,0 +1,144 @@
+-- This mod's settings, in the order they appear on both menus.
+--
+-- Its own module rather than locals in main.lua so Motion can read the live
+-- values without main.lua having to push them in on every change.
+
+local V = ...
+local Setting = V.require("Setting")
+
+local Settings = {}
+
+Settings.motion = Setting.new("motion", "MOTION",
+  { "tilt", "demo", "off" }, { "TILT", "DEMO", "OFF" },
+  "TILT moves the light with the motion sensor. DEMO moves the light "
+  .. "through a test pattern. Use DEMO if you do not have a motion sensor. "
+  .. "OFF gives the light back to the game. The game then moves the light "
+  .. "slowly, as it does without this mod.",
+  "tilt")
+
+-- Horizontal and vertical gain, as two independent rows over one shared
+-- ladder.  They are separate because the axes do not have the same range of
+-- motion behind them: pitching the top edge towards or away from you is a
+-- wrist movement with enormous travel (measured on hardware, gravity swung
+-- -0.89 to +0.77 without effort), while turning the console about the
+-- screen's vertical axis runs out around 25 degrees before you are no longer
+-- looking at the screen.  One gain across both is what made sideways
+-- movement feel stiff, so sideways simply defaults higher.
+local GAIN_VALUES = { "subtle", "low", "normal", "high", "wide", "max" }
+local GAIN_LABELS = { "SUBTLE", "LOW", "NORMAL", "HIGH", "WIDE", "MAX" }
+
+Settings.xrange = Setting.new("xrange", "SIDEWAYS AMT",
+  GAIN_VALUES, GAIN_LABELS,
+  "This row sets the distance that the light moves to the left and to the "
+  .. "right. A higher value moves the light more.",
+  "wide")
+
+Settings.yrange = Setting.new("yrange", "UP/DOWN AMT",
+  GAIN_VALUES, GAIN_LABELS,
+  "This row sets the distance that the light moves up and down. A higher "
+  .. "value moves the light more.",
+  "high")
+
+Settings.smooth = Setting.new("smooth", "SMOOTHING",
+  { "tight", "normal", "loose" }, { "TIGHT", "NORMAL", "LOOSE" },
+  "How hard the accelerometer is filtered. TIGHT follows your hands "
+  .. "closely and carries their shake; LOOSE glides and lags.")
+
+-- The one thing about the Deck's IMU that cannot be settled by reading the
+-- report: which way its axes point relative to the screen, and with what
+-- sign.  Rather than bake a guess in, the guess is the default and this row
+-- flips it.
+-- Which sensor axis drives each direction of light travel, and its sign.
+--
+-- Every axis the hardware reports is offered, because the whole point is to
+-- let a player try things.  Gravity supplies only TWO independent directions
+-- -- a unit vector has two degrees of freedom, so TURN and TIP exhaust it --
+-- and FLAT is the same vector's third component, useful as "how face-up is
+-- it" rather than as a direction.
+--
+-- The gyro supplies the axis gravity physically cannot: TWIST. Rotating the
+-- console about the screen normal leaves the gravity vector pointing exactly
+-- where it was, so no accelerometer can see it; spin a Deck flat on a table
+-- and it reads the same throughout.
+local SRC_VALUES = { "tip", "twist", "turn", "spinx", "spiny", "off" }
+local SRC_LABELS = { "TIP", "SIDE", "TURN", "SPIN-V", "SPIN-H", "OFF" }
+local SRC_HELP =
+  "This row selects the movement that moves the light. "
+  .. "TIP: move the top edge away from you or toward you. "
+  .. "SIDE: lift one side of the console. Hold the console upright to use "
+  .. "SIDE. "
+  .. "TURN: turn the console like a page. Put the console flat to use TURN. "
+  .. "SPIN-V and SPIN-H: the light moves while you turn the console. The "
+  .. "light stops when you stop. "
+  .. "OFF: the light does not move in this direction."
+
+Settings.srcx = Setting.new("srcx", "SIDEWAYS",
+  SRC_VALUES, SRC_LABELS, SRC_HELP, "twist")
+Settings.srcy = Setting.new("srcy", "UP/DOWN",
+  SRC_VALUES, SRC_LABELS, SRC_HELP, "tip")
+
+Settings.signx = Setting.new("signx", "SIDEWAYS +/-",
+  { "pos", "neg" }, { "NORMAL", "FLIPPED" },
+  "This row reverses the direction. Use it if the light moves to the left "
+  .. "when you want it to move to the right.", "pos")
+Settings.signy = Setting.new("signy", "UP/DOWN +/-",
+  { "pos", "neg" }, { "NORMAL", "FLIPPED" },
+  "This row reverses the direction. Use it if the light moves up when you "
+  .. "want it to move down.", "pos")
+
+Settings.shadow = Setting.new("shadow", "SHADOW",
+  { "follow", "fixed", "off" }, { "FOLLOW", "FIXED", "OFF" },
+  "FOLLOW moves the shadow below the text and the sprites. The shadow "
+  .. "moves away from the light. FIXED keeps the shadow in one position. "
+  .. "OFF removes the shadow.",
+  "follow")
+
+-- A recentre you can reach without opening a menu.
+--
+-- The obvious gesture -- touching both capacitive stick tops -- turned out to
+-- be unreachable: Steam Input never exposes the Deck's stick touch as a
+-- binding source (its only mention anywhere is an internal preference that
+-- uses it to mute the trackpads), and the raw HID button field reads as
+-- permanently zero while Steam owns the controller.  So this listens for a
+-- KEY instead, and the console's back buttons -- which the game does not use
+-- at all -- can be bound to it in Steam Input.
+Settings.hotkey = Setting.new("hotkey", "QUICK CENTRE",
+  { "on", "off" }, { "ON", "OFF" },
+  "This row lets a button move the light to the centre. You do not have to "
+  .. "open this menu. Assign the LEFT CONTROL key to a rear button in the "
+  .. "Steam controller settings. The game does not use the rear buttons.",
+  "on")
+
+Settings.order = { Settings.motion,
+                   Settings.srcx, Settings.signx,
+                   Settings.srcy, Settings.signy,
+                   Settings.xrange, Settings.yrange,
+                   Settings.smooth, Settings.shadow, Settings.hotkey }
+
+function Settings.schema()
+  local out = {}
+  for i, s in ipairs(Settings.order) do out[i] = s:schema() end
+  return out
+end
+
+-- Put every row back to the value it shipped with.
+--
+-- Worth having as one action rather than making the player walk the list:
+-- there are ten rows, several interact (a source and its sign, a gain and
+-- the centring it is measured from), and a half-reverted set is harder to
+-- reason about than either extreme.
+function Settings.resetAll(game)
+  for _, s in ipairs(Settings.order) do
+    s:setPos(s:defaultIndex(), game, true)
+  end
+  if game and game.writeOptions then pcall(game.writeOptions, game) end
+end
+
+-- Move whichever setting a "mod.options_changed" payload names.
+function Settings.sync(key, value)
+  for _, s in ipairs(Settings.order) do
+    if s.key == key then s:sync(value) return end
+  end
+end
+
+return Settings
