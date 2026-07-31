@@ -38,25 +38,80 @@ The author did not test them.
 
 ## Install
 
-Put the files of this repository in a directory that is named `DECK_TILT`.
-Put that directory in the `mods` directory of the engine:
+There are two methods. The script is the quicker one. The manual method does
+the same work, and you can read every step.
+
+Both methods put the mod here:
 
 ```
 <engine>/game/mods/DECK_TILT/
 ```
 
-To do this with git:
+`<engine>` is the directory that holds `game/` and `love/`.
+
+### Method 1: the script
+
+Unpack the archive, or clone the repository, in any directory. Then run:
+
+```
+./install.sh
+```
+
+The script looks for the engine above its own directory first. If it does not
+find the engine there, it searches your home directory and any removable
+disc. If it still does not find the engine, give the path:
+
+```
+./install.sh /path/to/engine
+```
+
+The script copies a fixed list of files. It copies no other file, so a `.git`
+directory stays behind. It stops before it writes if a different mod is
+already at that path. It runs the tests of the mod when a system Lua is
+available.
+
+To remove the mod:
+
+```
+./install.sh --uninstall
+```
+
+The remove step reads the manifest first. It removes the directory only when
+the manifest gives the identifier `DECK_TILT`. If the manifest does not, the
+script stops and changes nothing.
+
+### Method 2: by hand
+
+1. Find the engine directory. It holds `game/` and `love/`.
+2. Make a directory that is named `DECK_TILT` in `<engine>/game/mods/`.
+3. Copy `main.lua`, `manifest.json` and the `lib` directory into it.
+4. Start the game again.
+
+The result must look like this:
+
+```
+<engine>/game/mods/DECK_TILT/
+    manifest.json
+    main.lua
+    lib/
+```
+
+To install with git instead, clone directly into position:
 
 ```
 cd <engine>/game/mods
 git clone <repository-url> DECK_TILT
 ```
 
-The engine enables a new mod automatically. To confirm this, or to disable the
+To remove the mod by hand, delete `<engine>/game/mods/DECK_TILT`.
+
+### After you install
+
+The engine enables a new mod by itself. To confirm this, or to disable the
 mod, open `MODS` in the start menu or in `OPTIONS`.
 
-Caution: the row in that panel shows an action, not a condition. The row shows
-`DISABLE` when the mod is on. Push A once only.
+Caution: the row in that panel shows an action, not a condition. The row
+shows `DISABLE` when the mod is on. Push A once only.
 
 Start the game again after you install the mod.
 
@@ -236,8 +291,11 @@ The mod claims no hotkey. The game uses keys 2 to 5. The other mod uses 3 and
 ## Tests
 
 ```
+cd <engine>/game
 lua5.4 mods/DECK_TILT/tests/deck_tilt_test.lua
 ```
+
+`./install.sh` runs this for you when a system Lua is available.
 
 To see the effect without the gyro, set `MOTION` to `DEMO`.
 
