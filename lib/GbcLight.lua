@@ -275,10 +275,19 @@ end
 -- SUBTLE is not a smaller number picked by feel: at 1.0 the bands are the
 -- engine's own strength, which is calibrated for a backing-blended frame and
 -- is visibly too much here.  See Overlay's SHIMMER_CHROMA_GAIN.
-local SHIMMER = { subtle = 0.55, full = 1.0, off = 0 }
+-- Multipliers on the overlay's base unit.  FULL = 3.0 is the engine's own
+-- SHIMMER_CHROMA_GAIN, so FULL means "as strong as GBC FX" and the values
+-- below it are genuinely weaker rather than a guess.  MAX goes past it,
+-- because a full screen spreads what a 160x144 panel concentrated.
+local SHIMMER = { off = 0, subtle = 0.8, normal = 1.8, full = 3.0, max = 5.0 }
+local GLARE   = { off = 0, low = 0.7, normal = 1.0, high = 2.2, max = 4.0 }
 
 function GbcLight.shimmerAmount()
-  return SHIMMER[Settings.shimmer:get()] or SHIMMER.subtle
+  return SHIMMER[Settings.shimmer:get()] or SHIMMER.normal
+end
+
+function GbcLight.glareAmount()
+  return GLARE[Settings.glare:get()] or GLARE.high
 end
 
 -- Our own pass, over whatever the engine composed -- including another mod's
@@ -302,7 +311,7 @@ function GbcLight.presentOverlay(canvas, pixelScale)
     sh:send("deckLight", { lx, ly })
     sh:send("deckShadowOff", { ox, oy })
     sh:send("deckShadowAmt", (mode == "off") and 0 or 1)
-    sh:send("deckGlare", 1)
+    sh:send("deckGlare", GbcLight.glareAmount())
     sh:send("deckShimmer", GbcLight.shimmerAmount())
   end)
   if not ok then return stockPresent(canvas, pixelScale) end

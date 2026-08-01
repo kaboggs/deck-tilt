@@ -187,6 +187,7 @@ Push **B** to go back to the rows.
 | `SIDEWAYS AMT` | SUBTLE to MAX | WIDE |
 | `UP/DOWN AMT` | SUBTLE to MAX | HIGH |
 | `SMOOTHING` | TIGHT / NORMAL / LOOSE | TIGHT |
+| `AUTO LEVEL` | SLOW / NORMAL / FAST / OFF | NORMAL |
 | `SHADOW` | FOLLOW / FIXED / OFF | FOLLOW |
 | `3D LIGHT` | AUTO / ON / OFF | AUTO |
 | `COLOUR` | SUBTLE / FULL / OFF | SUBTLE |
@@ -222,6 +223,26 @@ the console upside down. Press `RECENTRE` in that position, then tilt.
 
 `QUICK CENTRE` does the same from a rear button, at any time, without the
 menu. See **Set up the rear button**.
+
+### Keep the centre where you hold it
+
+Your hold changes while you play. Your wrists settle, and the console goes
+with them. The centre stays where you put it, so the light moves away from
+the middle and stays there.
+
+Measured on this mapping: a change of 10 degrees holds the light against one
+edge. A change of 25 degrees puts the centre off the screen.
+
+`AUTO LEVEL` moves the centre slowly to the angle that you hold. A change of
+hold takes a minute, and it is absorbed. A tilt to aim takes a second, and it
+is not.
+
+| Value | Time | Result |
+|---|---|---|
+| `SLOW` | 45 s | Can be too slow for a hold that keeps changing. |
+| `NORMAL` | 20 s | The initial value. |
+| `FAST` | 8 s | Follows quickly. Can also absorb a tilt that you hold. |
+| `OFF` | — | The centre stays exactly where `RECENTRE` put it. |
 
 ## How the mod reads the sensor
 

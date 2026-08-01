@@ -146,7 +146,7 @@ local schema = Settings.schema()
 local function schemaFor(key)
   for _, row in ipairs(schema) do if row.key == key then return row end end
 end
-T.eq(#schema, 12, "twelve settings are defined")
+T.eq(#schema, 14, "fourteen settings are defined")
 T.eq(schema[1].key, "motion", "MOTION leads")
 -- assert the SCHEMA default, not the live value: the live one resolves
 -- through mod.options against whatever the player last saved, so asserting
@@ -487,12 +487,29 @@ do
   -- the engine's 3.0 assumes a backing-blended frame; this pass has none
   T.check(Overlay.SHADER_SRC:find("SHIMMER_CHROMA_GAIN 1%.0") ~= nil,
     "at a gain that suits an unblended frame, not the engine's 3.0")
-  T.eq(GbcLight.shimmerAmount(), 0.55, "COLOUR defaults to SUBTLE")
-  Settings.shimmer:setPos(3)
-  T.eq(GbcLight.shimmerAmount(), 0, "and OFF removes the colour entirely")
-  Settings.shimmer:setPos(2)
-  T.eq(GbcLight.shimmerAmount(), 1.0, "and FULL matches the engine's strength")
-  Settings.shimmer:setPos(1)
+  -- FULL is pinned to the engine's own gain, so "as strong as GBC FX" is a
+  -- fact about the number rather than a claim in the help text.
+  T.eq(Settings.shimmer:get(), "normal", "COLOUR defaults to NORMAL")
+  -- Setting has setPos, not setValue: address the rows by their value's
+  -- position so a reordering of the list shows up here as a failure.
+  local function posOf(setting, want)
+    for i, v in ipairs(setting.values) do if v == want then return i end end
+  end
+  local function shimmerAt(v)
+    Settings.shimmer:setPos(posOf(Settings.shimmer, v)); return GbcLight.shimmerAmount()
+  end
+  local function glareAt(v)
+    Settings.glare:setPos(posOf(Settings.glare, v)); return GbcLight.glareAmount()
+  end
+  T.eq(shimmerAt("off"), 0, "COLOUR OFF removes the colour entirely")
+  T.eq(shimmerAt("full"), 3.0, "COLOUR FULL matches the engine's chroma gain")
+  T.check(shimmerAt("max") > 3.0, "and MAX goes past what the engine does")
+  T.check(shimmerAt("subtle") < 3.0, "while SUBTLE stays under it")
+  T.eq(glareAt("off"), 0, "GLARE OFF removes the bright area")
+  T.check(glareAt("max") > glareAt("normal"),
+    "and MAX is brighter than the engine's own hotspot")
+  T.check(glareAt("normal") == 1.0, "with NORMAL pinned to the engine's value")
+  shimmerAt("normal"); glareAt("high")
   T.check(Overlay.SHADER_SRC:find("deckShadowOff", 1, true) ~= nil,
     "and it takes the drop-shadow offset this mod computes")
 
@@ -557,6 +574,79 @@ do
               or body:find("%f[%w_]" .. word .. "%s*=[^=]")
     T.check(not bad, ("the overlay shader does not use %q as an identifier"):format(word))
   end
+end
+
+
+-- ------- the centre must follow a changed hold
+--
+-- With the anchor fixed, 15 degrees of posture drift over 90 seconds leaves
+-- the resting light at 0.09 -- hard against the top edge, with no room to
+-- tilt further that way. That is the fault this row exists for, and it is
+-- asserted here as a NUMBER so it cannot come back quietly.
+--
+-- Imu.poll is stubbed rather than Imu.x/y/z being set: light() takes its
+-- reading from poll's return value, so setting the fields alone drives
+-- nothing at all and every mode scores identically. The first version of
+-- this simulation did exactly that and reported a clean pass for a broken
+-- build.
+do
+  local function posOf(st, want)
+    for i, v in ipairs(st.values) do if v == want then return i end end
+  end
+  local function grav(phi)
+    local r = math.rad(phi)
+    return 0, -math.sin(r), math.cos(r)
+  end
+  local realPoll = Imu.poll
+  local phi = 30
+  Imu.poll = function()
+    Imu.rx, Imu.ry, Imu.rz = 0, 0, 0
+    Imu.trust = 1
+    local x, y, z = grav(phi)
+    Imu.x, Imu.y, Imu.z = x, y, z
+    return x, y, z
+  end
+  local realStatus = Imu.status
+  Imu.status = "LIVE"
+
+  local function restAfterDrift(mode, driftDeg, driftSecs)
+    Settings.level:setPos(posOf(Settings.level, mode))
+    Motion.reset(); Motion.resetCentre()
+    phi = 30
+    for _ = 1, 120 do Motion.light(1/60) end
+    Motion.recentre()
+    for i = 1, driftSecs * 60 do
+      phi = 30 + driftDeg * i / (driftSecs * 60)
+      Motion.light(1/60)
+    end
+    return select(2, Motion.light(1/60))
+  end
+
+  local off = restAfterDrift("off", 15, 90)
+  T.check(off < 0.2,
+    ("with AUTO LEVEL OFF a changed hold does strand the light (ly=%.3f)")
+      :format(off))
+
+  local normal = restAfterDrift("normal", 15, 90)
+  T.check(math.abs(normal - 0.5) < 0.15,
+    ("and NORMAL brings the centre back to the middle (ly=%.3f)"):format(normal))
+  T.check(normal > off + 0.2, "which is a real improvement, not a rounding")
+
+  -- and it must not eat an aiming tilt: hold 15 degrees for two seconds
+  Settings.level:setPos(posOf(Settings.level, "normal"))
+  Motion.reset(); Motion.resetCentre()
+  phi = 30
+  for _ = 1, 120 do Motion.light(1/60) end
+  Motion.recentre()
+  phi = 45
+  local held
+  for _ = 1, 120 do held = select(2, Motion.light(1/60)) end
+  T.check(held < 0.30,
+    ("a 15 deg tilt held 2s still reaches the upper area (ly=%.3f)"):format(held))
+
+  Imu.poll, Imu.status = realPoll, realStatus
+  Settings.level:setPos(posOf(Settings.level, "normal"))
+  Motion.reset(); Motion.resetCentre()
 end
 
 local Help = V.require("HelpScreen")

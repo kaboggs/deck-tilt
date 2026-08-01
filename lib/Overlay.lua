@@ -40,6 +40,9 @@ extern number deckGlare;
 extern number deckShimmer;
 
 #define PI 3.14159265359
+// The engine's 0.15 is a hotspot on a 160x144 panel.  Spread over a full
+// screen it is nearly invisible, so the GLARE row scales it and reaches well
+// past 1.0.
 #define GLARE_INTENSITY 0.15
 #define GLARE_SIGMA 0.25
 #define SHIMMER_INTENSITY 0.25
@@ -53,8 +56,10 @@ extern number deckShimmer;
 // splotchy over a 160x144 panel and aliases into hairlines at full res.
 #define SHIMMER_SPREAD 1.0
 // Flat pale ground is where the rings have nothing to hide behind, so ease
-// the shimmer out as a pixel approaches white.
-#define SHIMMER_WHITE_FADE 0.55
+// the shimmer out as a pixel approaches white.  Modest: at 0.55 this removed
+// the bands from exactly the surfaces a 3D world is mostly made of, which
+// read on hardware as no colour at all.
+#define SHIMMER_WHITE_FADE 0.30
 #define LIGHT_RANGE 0.6
 #define FILM_NOISE_AMOUNT 0.5
 #define REFLECT_FLOOR 0.03

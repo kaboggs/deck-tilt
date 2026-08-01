@@ -92,6 +92,20 @@ local GYRO_K = { x = -0.019, y = -0.027, z = 0.019 }
 -- Long enough that hand motion does not reach the light, short enough that
 -- gyro drift never accumulates visibly.
 local FUSE_TAU = 1.2
+
+-- How fast the anchor follows a sustained change of hold, in seconds.
+--
+-- Measured, not guessed: with the anchor fixed, 10 degrees of posture drift
+-- pins the light against the top edge and 25 degrees puts the resting
+-- position off the screen entirely.  Nobody holds a console at one angle for
+-- ten minutes -- wrists settle -- so a fixed anchor cannot stay centred.
+--
+-- These are far longer than an aiming tilt and far shorter than a posture
+-- change.  A tilt held two seconds loses about a tenth of its deflection at
+-- SLOW, which is not perceptible; a lean that lasts a minute is absorbed.
+-- OFF is kept because an anchor that moves at all is wrong for a player who
+-- recentres by hand and wants the mapping to stay exactly where it was put.
+local LEVEL_TAU = { off = nil, slow = 45.0, normal = 20.0, fast = 8.0 }
 -- --------------------------------------------------------------------------
 
 -- Smoothing, seconds.  An accelerometer reads gravity plus whatever the
@@ -271,6 +285,22 @@ function Motion.light(dt)
 
   -- the anchor is the gravity direction itself, not a pair of angles
   aX = aX or fx; aY = aY or fy; aZ = aZ or fz
+
+  -- Let the anchor follow a sustained change of hold.  Applied to the
+  -- anchor rather than to the output: the deviation stays a true rotation
+  -- between two gravity directions, so the mapping keeps reaching both
+  -- edges instead of being nudged off centre by a correction term.
+  local levelTau = LEVEL_TAU[Settings.level:get()]
+  if levelTau then
+    local w = 1 - math.exp(-dt / levelTau)
+    aX = aX + (fx - aX) * w
+    aY = aY + (fy - aY) * w
+    aZ = aZ + (fz - aZ) * w
+    -- renormalise: two unit vectors blended are shorter than one, and the
+    -- cross product this feeds reads that shortfall as a smaller angle
+    local m = math.sqrt(aX * aX + aY * aY + aZ * aZ)
+    if m > 1e-6 then aX, aY, aZ = aX / m, aY / m, aZ / m end
+  end
 
   -- accelerometer's opinion of the rotation since the anchor
   local accTip, accTurn, accSide = Motion.deviation(aX, aY, aZ, fx, fy, fz)

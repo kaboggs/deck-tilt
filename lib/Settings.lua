@@ -121,14 +121,47 @@ Settings.overlay = Setting.new("overlay", "3D LIGHT",
 -- have nothing to break them up and read as contour lines rather than as
 -- iridescence. SUBTLE is the default for that reason. This row does not
 -- touch the engine's own GBC FX shimmer, which is fixed at level 4.
-Settings.shimmer = Setting.new("shimmer", "COLOUR", 
-  { "subtle", "full", "off" }, { "SUBTLE", "FULL", "OFF" },
+Settings.shimmer = Setting.new("shimmer", "COLOUR",
+  { "off", "subtle", "normal", "full", "max" },
+  { "OFF", "SUBTLE", "NORMAL", "FULL", "MAX" },
   "How much colour the light adds on the 3D LIGHT overlay. The colour is a "
-  .. "set of rings around the light. SUBTLE is less strong. FULL is as "
-  .. "strong as the game's own effect. OFF removes the colour and keeps the "
-  .. "glare and the drop shadow. This row does nothing when the game draws "
-  .. "its own GBC FX light.",
-  "subtle")
+  .. "set of rings around the light. FULL is as strong as the effect of the "
+  .. "game. MAX is stronger than the game. OFF removes the colour and keeps "
+  .. "the glare and the drop shadow. Use a low value if the rings look like "
+  .. "thin lines on large pale surfaces. This row does nothing while the "
+  .. "game draws its own GBC FX light.",
+  "normal")
+
+-- How bright the specular hotspot is.
+--
+-- Its own row because the engine's value is calibrated for a 160x144 panel,
+-- where 0.15 is a clear hotspot.  The same number spread over a full screen
+-- is very nearly nothing, which is what it looked like on hardware -- so
+-- this reaches well past the engine's strength rather than only below it.
+Settings.glare = Setting.new("glare", "GLARE",
+  { "off", "low", "normal", "high", "max" },
+  { "OFF", "LOW", "NORMAL", "HIGH", "MAX" },
+  "How bright the light is on the 3D LIGHT overlay. NORMAL is as bright as "
+  .. "the effect of the game. HIGH and MAX are brighter than the game, "
+  .. "because a full screen spreads the light more than a small screen "
+  .. "does. OFF removes the bright area and keeps the colour and the drop "
+  .. "shadow. This row does nothing while the game draws its own GBC FX "
+  .. "light.",
+  "high")
+
+-- Let the centre follow how you are holding the console.
+--
+-- Without this the centre is wherever you last put it, and it stays there
+-- while your hold does not. Measured: 10 degrees of change is enough to hold
+-- the light against one edge, and 25 degrees puts the centre off the screen.
+Settings.level = Setting.new("level", "AUTO LEVEL",
+  { "slow", "normal", "fast", "off" }, { "SLOW", "NORMAL", "FAST", "OFF" },
+  "Moves the centre slowly to the angle that you hold. Use this if the "
+  .. "light moves to one edge and stays there while you play. SLOW takes "
+  .. "about 45 seconds, which can be too slow. NORMAL takes about 20 "
+  .. "seconds. FAST takes about 8 seconds and can also absorb a tilt that "
+  .. "you hold. OFF keeps the centre exactly where RECENTRE put it.",
+  "normal")
 
 -- A recentre you can reach without opening a menu.
 --
@@ -150,8 +183,8 @@ Settings.order = { Settings.motion,
                    Settings.srcx, Settings.signx,
                    Settings.srcy, Settings.signy,
                    Settings.xrange, Settings.yrange,
-                   Settings.smooth, Settings.shadow,
-  Settings.overlay, Settings.shimmer, Settings.hotkey }
+                   Settings.smooth, Settings.level, Settings.shadow,
+  Settings.overlay, Settings.shimmer, Settings.glare, Settings.hotkey }
 
 function Settings.schema()
   local out = {}
