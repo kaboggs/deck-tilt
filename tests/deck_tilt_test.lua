@@ -489,7 +489,7 @@ do
     "at a gain that suits an unblended frame, not the engine's 3.0")
   -- FULL is pinned to the engine's own gain, so "as strong as GBC FX" is a
   -- fact about the number rather than a claim in the help text.
-  T.eq(Settings.shimmer:get(), "normal", "COLOUR defaults to NORMAL")
+  T.eq(Settings.shimmer:get(), "max", "COLOUR defaults to MAX")
   -- Setting has setPos, not setValue: address the rows by their value's
   -- position so a reordering of the list shows up here as a failure.
   local function posOf(setting, want)
@@ -509,7 +509,7 @@ do
   T.check(glareAt("max") > glareAt("normal"),
     "and MAX is brighter than the engine's own hotspot")
   T.check(glareAt("normal") == 1.0, "with NORMAL pinned to the engine's value")
-  shimmerAt("normal"); glareAt("high")
+  shimmerAt("max"); glareAt("high")
   T.check(Overlay.SHADER_SRC:find("deckShadowOff", 1, true) ~= nil,
     "and it takes the drop-shadow offset this mod computes")
 

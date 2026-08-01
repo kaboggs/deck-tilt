@@ -190,7 +190,8 @@ Push **B** to go back to the rows.
 | `AUTO LEVEL` | SLOW / NORMAL / FAST / OFF | NORMAL |
 | `SHADOW` | FOLLOW / FIXED / OFF | FOLLOW |
 | `3D LIGHT` | AUTO / ON / OFF | AUTO |
-| `COLOUR` | SUBTLE / FULL / OFF | SUBTLE |
+| `COLOUR` | OFF / SUBTLE / NORMAL / FULL / MAX | MAX |
+| `GLARE` | OFF / LOW / NORMAL / HIGH / MAX | HIGH |
 | `QUICK CENTRE` | ON / OFF | ON |
 | `RECENTRE` | action | — |
 | `RESET ALL` | action | — |
@@ -211,6 +212,15 @@ console. The light stops when you stop.
 
 Gravity cannot detect a turn around the direction of gravity. If you hold the
 console upright, `TURN` therefore does nothing. Use `SIDE` in that position.
+
+Important: the three movements are measured **from the centre angle**, not
+from the console. `SIDE` therefore does nothing if you set the centre while
+the console was flat and then hold the console upright. The same movement
+reads as `TURN` instead.
+
+Press `RECENTRE` while you hold the console the way that you intend to play.
+Then `SIDE` moves the light across the full width. `AUTO LEVEL` also corrects
+this by itself, but it needs about a minute.
 
 ### Centre the light
 

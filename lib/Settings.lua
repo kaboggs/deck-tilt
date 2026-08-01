@@ -130,7 +130,7 @@ Settings.shimmer = Setting.new("shimmer", "COLOUR",
   .. "the glare and the drop shadow. Use a low value if the rings look like "
   .. "thin lines on large pale surfaces. This row does nothing while the "
   .. "game draws its own GBC FX light.",
-  "normal")
+  "max")
 
 -- How bright the specular hotspot is.
 --
