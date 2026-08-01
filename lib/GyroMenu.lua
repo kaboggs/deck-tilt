@@ -207,6 +207,10 @@ function GyroMenu:update(dt)
                                        #rows, backRow)
 end
 
+-- The SELECT hint, exposed so its width can be asserted rather than eyeballed.
+GyroMenu.HINT = "SELECT: MORE INFO"
+GyroMenu.HINT_X = 8
+
 function GyroMenu:draw()
   local OptionRows = require("src.ui.OptionRows")
   OptionRows.draw(self.game, self.rows, self.index, self.scroll or 0,
@@ -215,9 +219,14 @@ function GyroMenu:draw()
   -- Every row has a page of plain English behind SELECT, which is worth
   -- nothing if nobody knows it is there.  OptionRows leaves this strip free:
   -- its four boxes end at 127 and the bottom label sits at 136.
+  --
+  -- x = HINT_X, not 16, and the text is short: a screenshot caught the older
+  -- "SELECT: WHAT'S THIS" starting at 16 and running 8px past the 160px
+  -- screen, so the last glyph was cut in half.  The width is asserted in the
+  -- test suite now rather than left to eye.
   local Font = require("src.render.Font")
   love.graphics.setColor(0, 0, 0, 1)
-  Font.draw("SELECT: WHAT'S THIS", 16, 128)
+  Font.draw(GyroMenu.HINT, GyroMenu.HINT_X, 128)
   love.graphics.setColor(1, 1, 1, 1)
 end
 

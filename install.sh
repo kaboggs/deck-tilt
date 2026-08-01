@@ -25,6 +25,7 @@ FILES=(
   lib/HelpScreen.lua lib/Imu.lua lib/Motion.lua lib/Setting.lua
   lib/Settings.lua
   tests/deck_tilt_test.lua
+  docs/axis-map.gif docs/axis-map.png docs/help-page.png docs/sd-gyro-menu.png
 )
 
 say()  { printf '%s\n' "$*"; }
@@ -164,7 +165,7 @@ fi
 if [ "$SRC" = "$DEST" ]; then
   say "Already in the right place. Nothing to copy."
 else
-  mkdir -p "$DEST/lib" "$DEST/tests"
+  mkdir -p "$DEST/lib" "$DEST/tests" "$DEST/docs"
   for f in "${FILES[@]}"; do
     cp -f -- "$SRC/$f" "$DEST/$f"
   done

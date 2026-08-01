@@ -1,8 +1,18 @@
 # Deck Tilt
 
-This mod moves the GBC FX light with the motion sensor of the console. The
-glare, the coloured shimmer and the drop shadow follow the angle of the
-console.
+**Designed for the gyro of the Steam Deck.** This mod moves the GBC FX light
+with the motion sensor of the console. The glare, the coloured shimmer and
+the drop shadow follow the angle of the console. Tilt the console, and the
+light moves.
+
+The mod needs the motion sensor of a Steam Deck. It does nothing on hardware
+that has no such sensor.
+
+![The axis map page: the light moves and the drop shadows turn to stay opposite it](docs/axis-map.gif)
+
+The `AXIS MAP` page above shows the console and the light together. The light
+moves with the console. Each drop shadow on the page turns to stay opposite
+the light.
 
 Without this mod, the game moves the light on a fixed cycle. The cycle takes
 48 seconds in one direction and 90 seconds in the other. The light therefore
@@ -154,8 +164,17 @@ To turn this off, set `QUICK CENTRE` to `OFF`.
 
 ## Options
 
-Open `OPTIONS`, then select `SD-GYRO`. Push **SELECT** on a row to read a full
-description of that row.
+Open `OPTIONS`, then select `SD-GYRO`.
+
+![The SD-GYRO page](docs/sd-gyro-menu.png)
+
+Push **SELECT** on a row to read a full description of that row. The labels
+are short because the screen is 160 pixels wide. This page is where the
+explanation is.
+
+![A description page, opened with SELECT](docs/help-page.png)
+
+Push **B** to go back to the rows.
 
 | Row | Values | Initial value |
 |---|---|---|

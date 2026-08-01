@@ -43,6 +43,21 @@ local ROWS = {
 }
 local ROW_Y = { 88, 100, 112, 124 }
 
+-- Fixed text on this page, as { text, x, y }.  Named here rather than inline
+-- so the test suite can assert every one of them lands inside the 160x144
+-- screen with a margin.  A screenshot caught two that did not: the title sat
+-- at y=0 and SIDE ended at exactly x=160, so both were flush against the
+-- frame and their drop shadows were cut off.  SHADOW_ROOM is the clearance
+-- every label needs on its right and below: the drop shadow reaches 3.45px
+-- and the glyph cell is 8 tall.
+local LABELS = {
+  title = { "AXIS MAP", 8, 2 },
+  turn  = { "TURN", 64, 10 },
+  tip   = { "TIP", 4, 44 },
+  side  = { "SIDE", 120, 62 },
+}
+
+
 -- Which drawn rotation each selectable source corresponds to.  FLAT is the
 -- gravity vector's third component and TWIST the gyro's, and both describe
 -- rotation about the screen normal, so both light up the roll arc.
@@ -168,13 +183,13 @@ function AxisMap:drawRotations(active)
   -- is what that rotation looks like from where the player is sitting.
   local thick = set(active == "yaw")
   arc(80, 29, 29, 6, math.pi * 1.20, math.pi * 1.80, thick)
-  Font.draw("TURN", 64, 10)
+  Font.draw(LABELS.turn[1], LABELS.turn[2], LABELS.turn[3])
 
   -- TIP: top edge towards or away. A tall narrow sweep beside the console,
   -- that rotation seen from the left.
   thick = set(active == "pitch")
   arc(28, 50, 6, 12, -math.pi * 0.40, math.pi * 0.40, thick)
-  Font.draw("TIP", 4, 44)
+  Font.draw(LABELS.tip[1], LABELS.tip[2], LABELS.tip[3])
 
   -- SIDE: raising one side, about the screen face.  Nearly a full circle,
   -- since this rotation is seen face-on.  Held upright this is the only
@@ -182,7 +197,7 @@ function AxisMap:drawRotations(active)
   -- the gravity vector and leaves the reading unchanged.
   thick = set(active == "roll")
   arc(138, 48, 9, 9, math.pi * 0.25, math.pi * 1.75, thick)
-  Font.draw("SIDE", 128, 62)
+  Font.draw(LABELS.side[1], LABELS.side[2], LABELS.side[3])
 end
 
 -- When the sensor is not live nothing on this page moves, and the reason is
@@ -202,7 +217,7 @@ function AxisMap:draw()
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.rectangle("fill", 0, 0, 160, 144)
   love.graphics.setColor(0, 0, 0, 1)
-  Font.draw("AXIS MAP", 8, 0)
+  Font.draw(LABELS.title[1], LABELS.title[2], LABELS.title[3])
 
   local img = DeckSprite.image()
   if img then
@@ -246,5 +261,8 @@ function AxisMap:draw()
   local st = Imu.status or ""
   Font.draw(st, 160 - 8 - Font.width(st), 136)
 end
+
+AxisMap.LABELS = LABELS
+AxisMap.SHADOW_ROOM = 4
 
 return AxisMap

@@ -420,6 +420,48 @@ for _, row in ipairs(schema) do
 end
 
 -- ------- help text must not print through the footer
+-- The SELECT hint on the gyro page must fit the 160px screen.  A screenshot
+-- caught the first version starting at x=16 and running 8px past the right
+-- edge, so its last glyph was cut in half.  Invisible in source, obvious on
+-- screen.
+--
+-- Measured as #text * 8, not with Font.width: the fixture charmap in this
+-- harness has no glyph for several letters, and Font.encode drops what it
+-- cannot map.  Font.width would therefore UNDER-report and pass a string
+-- that overflows in the game -- the exact shape of test that lies.  Every
+-- page of this font is fixed-width at 8, which Font.draw documents.
+do
+  local Menu = V.require("GyroMenu")
+  T.check(not Menu.HINT:find("[^\32-\126]"),
+          "the SELECT hint is plain ASCII, so one byte is one glyph")
+  local right = Menu.HINT_X + #Menu.HINT * 8
+  T.check(right <= 160,
+          ("the SELECT hint ends at %d, inside the 160px screen"):format(right))
+  T.check(Menu.HINT_X >= 8, "and starts no further left than the row margin")
+end
+
+-- Every fixed label on the AXIS MAP page must sit inside the screen with
+-- room for its drop shadow.  A screenshot caught the title at y=0 and SIDE
+-- ending at exactly x=160: both glyphs were on-screen, but the shadow the
+-- mod itself draws was cut off, so they read as clipped.
+--
+-- 8px per character rather than Font.width, for the reason given above.
+do
+  local Map = V.require("AxisMap")
+  local ROOM = Map.SHADOW_ROOM
+  T.check(Map.LABELS ~= nil, "the axis page exposes its label positions")
+  for name, L in pairs(Map.LABELS or {}) do
+    local text, x, y = L[1], L[2], L[3]
+    T.check(x >= 2, ("%s starts at x=%d, clear of the left edge"):format(name, x))
+    T.check(y >= 2, ("%s starts at y=%d, clear of the top edge"):format(name, y))
+    T.check(x + #text * 8 + ROOM <= 160,
+      ("%s ends at x=%d with shadow room, inside 160")
+        :format(name, x + #text * 8 + ROOM))
+    T.check(y + 8 + ROOM <= 144,
+      ("%s ends at y=%d with shadow room, inside 144"):format(name, y + 8 + ROOM))
+  end
+end
+
 local Help = V.require("HelpScreen")
 local HM = Help.METRICS
 T.check(HM ~= nil, "the help page exposes its layout for checking")
