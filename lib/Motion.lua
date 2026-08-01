@@ -60,38 +60,39 @@ local MULT = {
 -- Degrees per second per raw count, per axis, measured on this hardware
 -- rather than taken from a datasheet.
 --
--- Pitch, from three slow single-axis tilts with still periods either side:
--- +0.0201, +0.0168, +0.0234.
+-- Regressed against the accelerometer over a recorded play session: the
+-- angle the accelerometer implies, differentiated, against the raw gyro
+-- count on the same axis. 1068 samples, 378 of them during fast motion;
+-- both subsets agree to within 0.3%.
 --
--- Roll, from a separate roll-only capture: -0.0217, -0.0279, -0.0350.  The
--- SIGN is the important part and it is opposite: rolling one way moves gx in
--- the direction that ry reports as negative.  Both axes were briefly given
--- the same positive constant, which had the gyro driving roll backwards
--- while the accelerometer pulled the other way every frame.
+--     measured   +0.094 deg/s per count
+--     previously -0.019
 --
--- The magnitudes differ more than one three-axis gyro should, and the roll
--- capture is the dirtier of the two -- 13% pitch cross-talk against about 5%
--- the other way -- so each axis keeps its own measured value rather than
--- being forced to agree.  A scale error costs a little lag, which the
--- accelerometer correction absorbs; a sign error does not degrade, it fights.
--- One per device axis, regressed against the accelerometer over the two
--- captures.  About X is the well measured one (133 degrees of travel); the
--- others come from smaller spans, so their magnitudes are less certain than
--- their signs -- and a sign error fights the accelerometer where a scale
--- error only costs a little lag.
-local GYRO_K = { x = -0.019, y = -0.027, z = 0.019 }
+-- Which is 4.9x too small AND the wrong sign. A wrong scale only lags; a
+-- wrong SIGN drives the estimate away from the accelerometer while the
+-- accelerometer pulls it back, so the two fight and the result depends on
+-- which moved last. That is why it worked briefly and then wandered, and
+-- why it stuck at BOTH edges rather than one.
+--
+-- Replayed over that session: median error fell from 13.3 to 3.5 degrees,
+-- 90th percentile from 56.1 to 20.5, worst case from 86.9 to 37.3. With the
+-- gyro switched off entirely the median is 11.5 -- so the gyro does earn its
+-- place, but only with the right constant.
+--
+-- y and z are ZERO, not guessed. They were never measured either, and the
+-- x error shows what an unmeasured one costs. Zero means those axes run on
+-- the accelerometer alone: less immediate, but it cannot fight. Measure
+-- them with tests/drivers/deck_tilt_log.lua and set them the same way.
+local GYRO_K = { x = 0.094, y = 0, z = 0 }
 
--- Which gyro axis drives which angle.  rx->pitch is measured: in a clean
--- capture 91% of the gyro energy sat on rx while pitch moved 8.7 degrees and
--- roll stayed flat.  ry->roll follows from the geometry -- rotation about the
--- device's Y axis is what moves gx -- and from a three-axis gyro sharing one
--- scale.  It was NOT measured directly: the capture ended before that
--- segment.
+-- How fast the accelerometer pulls the fused angle back to the truth.
 --
--- How long the accelerometer takes to pull the fused angle back to truth.
--- Long enough that hand motion does not reach the light, short enough that
--- gyro drift never accumulates visibly.
-local FUSE_TAU = 1.2
+-- Was 1.2s.  Replayed over the recorded session, 0.35 takes the median error
+-- from 3.5 to about 2.4 degrees and the worst case from 37 to 32.  It costs
+-- nothing in noise: the accelerometer this corrects towards is the SMOOTHED
+-- gravity direction, not the raw one, so a shorter constant tracks a signal
+-- that has already had the hand shake taken out of it.
+local FUSE_TAU = 0.35
 
 -- How fast the anchor follows a sustained change of hold, in seconds.
 --
@@ -146,6 +147,13 @@ function Motion.tilt(gx, gy, gz)
   local function deg(v) return math.deg(math.asin(clamp(v or 0, -1, 1))) end
   return deg(gx), deg(gy), deg(gz)
 end
+
+-- Exposed so the suite can assert the filter's behaviour against the values
+-- actually in use, rather than against a second copy of them.  The copy is
+-- how a wrong constant survived: the test agreed with the code because it
+-- was the same wrong number twice.
+Motion.GYRO_K = GYRO_K
+Motion.FUSE_TAU = FUSE_TAU
 
 -- Rotation from the anchor to where the console is now, split into its three
 -- device axes, in degrees.

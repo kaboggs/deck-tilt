@@ -672,8 +672,13 @@ T.eq(hs:maxScroll(), 12, "a long description can scroll as far as it overruns")
 -- detail: the fusion was inline and therefore untestable headless, and a
 -- sign error in the roll constant reached a player because of it.
 
-local FDT, FTAU = 1/60, 1.2
-local FK = { -0.019, -0.027, 0.019 }
+-- Read from the module, never copied.  These were duplicated here before,
+-- and that is exactly how a gyro constant that was 4.9x too small with the
+-- wrong sign passed every run: the test asserted the same wrong number the
+-- code used, so the two agreed all the way to the hardware.
+local FDT = 1/60
+local FTAU = Motion.FUSE_TAU
+local FK = { Motion.GYRO_K.x, Motion.GYRO_K.y, Motion.GYRO_K.z }
 
 -- a brisk tilt must reach the output on the FIRST frame; that immediacy is
 -- the whole reason the gyro is in here
@@ -712,6 +717,12 @@ for i, nm in ipairs({ "x", "y", "z" }) do
   local want = A + rate * FK[i] * FTAU
   T.check(math.abs(got - want) < 0.6,
     ("axis %s settles at %.2f, theory %.2f"):format(nm, got, want))
+  -- An axis with a zero constant must land exactly on the accelerometer,
+  -- which is the whole point of zeroing an unmeasured one.
+  if FK[i] == 0 then
+    T.check(math.abs(got - A) < 1e-6,
+      ("axis %s has no measured gyro constant, so it follows the accelerometer alone"):format(nm))
+  end
 end
 
 -- ------- graceful degradation on a host with no sensor
