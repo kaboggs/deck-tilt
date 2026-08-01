@@ -40,7 +40,9 @@ tagged release. The manifest of this mod accepts that, and also accepts
   include that engine. See **What you must supply**.
 - A Steam Deck, or a device that reports a Valve `28DE:1205` controller.
 - Gyro must be on in Steam Input. See **Set up the gyro**.
-- GBC FX must be at level 3 or level 4. Levels 1 and 2 have no light effect.
+- A light to move. Either set GBC FX to level 3 or level 4 (levels 1 and 2
+  have no light), or let the mod draw its own. See **Two ways to draw the
+  light**.
 
 ## What you must supply
 
@@ -418,52 +420,69 @@ The author tilted the console by hand with one title only. The other two use
 the same engine, the same shader and the same sensor, so the movement is
 expected to be the same. The author did not confirm this by hand.
 
-## Other mods
+## Two ways to draw the light
 
-This mod needs GBC FX. A mod that turns GBC FX off therefore stops this mod.
+This mod has two paths. It selects one by itself. Both are supported.
 
-The DramaticShape voxel mod does this from version 1.3.0. That version
-removes GBC FX from the options menu and holds it at zero while it is
-installed. Its documentation gives the reason: its own 3D view and a
-full-screen GBC FX pass fight each other.
-
-The result is that this mod and that mod cannot both be active from 1.3.0 on:
-
-| DramaticShape version | GBC FX | This mod |
+| Path | Used when | What draws the light |
 |---|---|---|
-| not installed | available | works |
-| 1.2.1 and before | available | works |
-| 1.3.0 and after | held at zero | loads, but has no light to move |
+| Engine light | GBC FX is available | The engine's own shader, with only the light position replaced |
+| Overlay | GBC FX is held off | This mod's own pass |
 
-This mod does not fail in that condition. The `SENSOR` row shows `GBCFX OFF`,
-and the game keeps its own light.
+### The engine light
 
-### Draw the light anyway
+This is the original path, and it does not change. The mod replaces two
+statements in the shader of the engine and nothing else. The back plate, the
+screen grid, the drop shadow and the colour are all the engine's own.
 
-The `3D LIGHT` row makes this mod draw the light itself when GBC FX is not
-available. It draws only three things: the glare, the colour and the drop
-shadow. It does not draw the back plate or the screen grid, which are the
-parts that fight a 3D view.
+This path is used when you do not have a mod that turns GBC FX off.
 
-It changes nothing else. It does not move the sun of the 3D mod. It does not
-change the shadows of the 3D mod. It does not change the day and night cycle.
-It does not write to the GBC FX setting, so the other mod keeps that setting
-at zero and the two do not fight.
+### The overlay
 
-| Value | Result |
+Another mod can hold GBC FX at zero. The engine then draws no light, and this
+mod has nothing to move.
+
+The overlay draws the light again on its own pass. It draws three things: the
+glare, the colour and the drop shadow. It does not draw the back plate or the
+screen grid. Those two model an LCD screen, and an LCD screen drawn over a 3D
+world is what such a mod objects to.
+
+![The light over a 3D world](docs/world-light.gif)
+
+The overlay changes nothing else. It does not move the light of the other
+mod. It does not change the shadows of the other mod. It does not change a
+day and night cycle. It does not write to the GBC FX setting, so the value
+that the other mod holds at zero is left alone and the two do not fight.
+
+| `3D LIGHT` | Result |
 |---|---|
 | `AUTO` | Draw the light only when GBC FX is off. This is the initial value. |
 | `ON` | Always draw the light. |
 | `OFF` | Never draw the light. |
 
-`AUTO` changes nothing while GBC FX works. The game keeps its own light and
+`AUTO` changes nothing while GBC FX works. The engine keeps its own light and
 this mod keeps moving it, as before.
 
 Use `COLOUR` to set how much colour the light adds, or to remove the colour.
 The colour is a set of rings around the light. On a large pale surface the
-rings can look like thin lines, so `SUBTLE` is the initial value.
+rings can look like thin lines. Lower the value if you see that.
 
 Use `SHADOW` `OFF` to remove the drop shadow by itself.
+
+## The DramaticShape voxel mod
+
+That mod holds GBC FX at zero from version 1.3.0. Its documentation gives the
+reason: its own 3D view and a full-screen GBC FX pass fight each other.
+
+| DramaticShape version | GBC FX | This mod |
+|---|---|---|
+| not installed | available | Engine light |
+| 1.2.1 and before | available | Engine light |
+| 1.3.0 and after | held at zero | Overlay, while `3D LIGHT` is `AUTO` or `ON` |
+
+Both mods can be active together. Set `3D LIGHT` to `OFF` if you would rather
+this mod did nothing while that one is installed. The `SENSOR` row then shows
+`GBCFX OFF`.
 
 ## Licence
 

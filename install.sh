@@ -25,7 +25,7 @@ FILES=(
   lib/HelpScreen.lua lib/Imu.lua lib/Motion.lua lib/Overlay.lua lib/Setting.lua
   lib/Settings.lua
   tests/deck_tilt_test.lua
-  docs/axis-map.gif docs/world-light.gif docs/axis-map.png
+  docs/axis-map.gif docs/world-light.gif
   docs/help-page.png docs/sd-gyro-menu.png
 )
 
