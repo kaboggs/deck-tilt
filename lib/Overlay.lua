@@ -63,7 +63,10 @@ extern number deckShimmer;
 #define LIGHT_RANGE 0.6
 #define FILM_NOISE_AMOUNT 0.5
 #define REFLECT_FLOOR 0.03
-#define SHADOW_OPACITY 0.5
+#define SHADOW_OPACITY 0.30
+// Fraction of the engine's shadow offset this pass uses. See the note at
+// the sample below.
+#define SHADOW_REACH 0.42
 
 float hash21(vec2 p)
 {
@@ -104,14 +107,30 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 pc)
     // light, so this pixel sits in its shadow.  Only darkening, never
     // lightening: a shadow cannot add light.
     if (deckShadowAmt > 0.0) {
-        vec2 shOff = deckShadowOff;
+        // Shortened hard.  The engine's 3.45px offset is tuned for dark GB
+        // pixels floating over a backing plate; here it lands a glyph-sized
+        // distance away on a glyph-dense page, so the shadow of one letter
+        // covers the next and the whole page reads as doubled text rather
+        // than as anything lit.  Captured and compared against the same page
+        // with this pass disabled, which is how the doubling was spotted.
+        vec2 shOff = deckShadowOff * SHADOW_REACH;
         vec3 behind = Texel(tex, tc - shOff * gbTexel).rgb;
         float here = luma(col);
         float there = luma(behind);
         // 'cast' is a GLSL reserved word -- it compiles nowhere.
-        float occl = clamp(here - there, 0.0, 1.0);
-        occl *= smoothstep(0.04, 0.28, occl);
-        col = mix(col, col * 0.55, occl * SHADOW_OPACITY * deckShadowAmt);
+        //
+        // Weighted by how dark the OCCLUDER is and how bright THIS pixel is,
+        // not by the difference between them. The difference alone traces
+        // every edge in the frame, so on a menu -- black glyphs on white --
+        // it drew a grey copy of every letter offset from the letter, which
+        // reads as doubled text rather than as a shadow.
+        //
+        // A shadow only ever falls on a lit surface, and only ever from
+        // something darker than it. Both terms are needed: drop either and
+        // the ghost comes back.
+        float occl = clamp((1.0 - there) * here, 0.0, 1.0);
+        occl *= smoothstep(0.10, 0.55, occl);
+        col = mix(col, col * 0.66, occl * SHADOW_OPACITY * deckShadowAmt);
     }
 
     float aspect = love_ScreenSize.x / love_ScreenSize.y;

@@ -141,7 +141,11 @@ do
   end
 end
 
-mod.exports.version = "0.1.0"
+-- From the manifest, never a second copy.  A hardcoded literal here went
+-- stale the moment the manifest was bumped, and the only thing that noticed
+-- was a test asserting the literal -- which is the same trap the gyro
+-- constants fell into.
+mod.exports.version = (mod.manifest and mod.manifest.version) or mod.version
 -- the lib namespace, so tests and probes can read the sensor state without
 -- going through the render path
 mod.exports.lib = V

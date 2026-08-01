@@ -25,7 +25,8 @@ FILES=(
   lib/HelpScreen.lua lib/Imu.lua lib/Motion.lua lib/Overlay.lua lib/Setting.lua
   lib/Settings.lua
   tests/deck_tilt_test.lua
-  docs/axis-map.gif docs/axis-map.png docs/help-page.png docs/sd-gyro-menu.png
+  docs/axis-map.gif docs/world-light.gif docs/axis-map.png
+  docs/help-page.png docs/sd-gyro-menu.png
 )
 
 say()  { printf '%s\n' "$*"; }

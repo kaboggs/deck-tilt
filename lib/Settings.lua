@@ -72,8 +72,19 @@ local SRC_HELP =
   .. "light stops when you stop. "
   .. "OFF: the light does not move in this direction."
 
+-- TURN rather than SIDE by default.
+--
+-- SIDE is the better movement in principle -- it is the only sideways gesture
+-- gravity can see when the console is held upright -- but it is measured from
+-- the centre angle, so it reads exactly zero until you have recentred in the
+-- pose you actually play in. A default that does nothing until you find a
+-- button and press it is a broken default, whatever its merits afterwards.
+--
+-- TURN works from a centre captured anywhere near flat, which is where most
+-- people will first meet it. Change this row to SIDE once you have recentred
+-- upright. See the note in the handoff about removing the choice entirely.
 Settings.srcx = Setting.new("srcx", "SIDEWAYS",
-  SRC_VALUES, SRC_LABELS, SRC_HELP, "twist")
+  SRC_VALUES, SRC_LABELS, SRC_HELP, "turn")
 Settings.srcy = Setting.new("srcy", "UP/DOWN",
   SRC_VALUES, SRC_LABELS, SRC_HELP, "tip")
 

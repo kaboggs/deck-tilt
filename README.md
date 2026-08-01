@@ -18,6 +18,22 @@ Without this mod, the game moves the light on a fixed cycle. The cycle takes
 48 seconds in one direction and 90 seconds in the other. The light therefore
 looks almost static.
 
+## Versions
+
+Give these when you report a problem. The mod reads its own version from
+`manifest.json`; the `SD-GYRO` page shows the sensor state next to it.
+
+| Part | Name | Version tested |
+|---|---|---|
+| This mod | Deck Tilt (`DECK_TILT`) | 0.2.0 |
+| Host engine | `gen1recomp` | `main`, after tag `v0.1.47`. Reports `0.0.0-dev` |
+| 3D mod (optional) | DramaticShape Voxel Mod (`DRAMATIC_SHAPE`) | 1.3.1 |
+| Runtime | LOVE | 11.5 |
+
+The engine reports `0.0.0-dev` when it is a source checkout rather than a
+tagged release. The manifest of this mod accepts that, and also accepts
+`>=0.1.37 <2.0.0`.
+
 ## Requirements
 
 - A host engine that supplies the GBC FX effect. This project does not
@@ -180,7 +196,7 @@ Push **B** to go back to the rows.
 |---|---|---|
 | `MOTION` | TILT / DEMO / OFF | TILT |
 | `AXIS MAP` | opens a page | — |
-| `SIDEWAYS` | TIP / SIDE / TURN / SPIN-V / SPIN-H / OFF | SIDE |
+| `SIDEWAYS` | TIP / SIDE / TURN / SPIN-V / SPIN-H / OFF | TURN |
 | `SIDEWAYS +/-` | NORMAL / FLIPPED | NORMAL |
 | `UP/DOWN` | TIP / SIDE / TURN / SPIN-V / SPIN-H / OFF | TIP |
 | `UP/DOWN +/-` | NORMAL / FLIPPED | NORMAL |
@@ -212,6 +228,11 @@ console. The light stops when you stop.
 
 Gravity cannot detect a turn around the direction of gravity. If you hold the
 console upright, `TURN` therefore does nothing. Use `SIDE` in that position.
+
+`SIDEWAYS` therefore ships as `TURN`, not `SIDE`. `SIDE` is the better
+movement when you hold the console upright, but it gives nothing at all until
+you press `RECENTRE` in that position, and a value that does nothing until you
+find a button is a poor initial value.
 
 Important: the three movements are measured **from the centre angle**, not
 from the console. `SIDE` therefore does nothing if you set the centre while
@@ -309,14 +330,23 @@ a data sheet.
 
 | Constant | Value | Source |
 |---|---|---|
-| Gyro scale, X axis | −0.019 deg/s per count | Three slow tips. 91% of the movement was on one axis. |
-| Gyro scale, Y axis | −0.027 deg/s per count | One turn test |
-| Gyro scale, Z axis | +0.019 deg/s per count | One lift test |
-| Correction time | 1.2 s | Selected after tests |
+| Gyro scale, X axis | +0.094 deg/s per count | Regressed over 1068 recorded samples of play |
+| Gyro scale, Y axis | 0 | Not measured. The axis uses the accelerometer only |
+| Gyro scale, Z axis | 0 | Not measured. The axis uses the accelerometer only |
+| Correction time | 0.35 s | Selected by replay over the same recording |
 
-The signs are more important than the values. A wrong value adds a small
-delay. A wrong sign makes the gyro and the accelerometer move the estimate in
-opposite directions. A test with a wrong sign gave an error of 19.6 degrees.
+The signs are more important than the values. A wrong value adds a delay. A
+wrong sign makes the gyro and the accelerometer move the estimate in opposite
+directions, so they fight and the result depends on which moved last.
+
+The first value for the X axis was −0.019. That is 4.9 times too small, and
+the sign is wrong. The light moved to an edge and stayed there, at the top or
+at the bottom. Replayed over the recording, the middle error fell from 13.3
+degrees to 3.5 degrees when the value was corrected.
+
+Two axes are zero because nobody has measured them. Zero means the axis uses
+the accelerometer only: less immediate, but it cannot fight. Measure them with
+`tests/drivers/deck_tilt_log.lua`, which records all three rates.
 
 ## The drop shadow
 

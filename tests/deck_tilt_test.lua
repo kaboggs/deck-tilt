@@ -30,7 +30,7 @@ T.eq(#run.errors, 0,
 
 local exports = run.loader.exports.DECK_TILT
 T.check(type(exports) == "table", "the mod publishes its exports")
-T.eq(exports.version, "0.1.0", "carrying its version")
+T.eq(exports.version, "0.2.0", "carrying its version")
 
 local V = exports.lib
 T.check(type(V) == "table" and type(V.require) == "function",
@@ -249,6 +249,11 @@ Settings.xrange:sync("wide")
 
 -- every axis the hardware reports must be selectable, and OFF must pin
 local srcSchema = schemaFor("srcx")
+-- SIDEWAYS ships as TURN, not SIDE: SIDE reads exactly zero until you have
+-- recentred in the pose you play in, and a default that does nothing until
+-- the player finds a button is a broken default.
+T.eq(srcSchema.default, "turn", "SIDEWAYS ships as TURN")
+T.eq(schemaFor("srcy").default, "tip", "and UP/DOWN as TIP")
 local offered = {}
 for _, c in ipairs(srcSchema.choices) do offered[c[2]] = true end
 for _, want in ipairs({ "tip", "twist", "turn", "spinx", "spiny", "off" }) do
