@@ -348,9 +348,34 @@ To see the effect without the gyro, set `MOTION` to `DEMO`.
 One installation of this mod applies to all titles that the host engine runs.
 The mod has no code for a specific title.
 
-The author tested the mod with one title only. Two other titles are
-**untested**. They use the same engine and the same sensor, so the mod is
-expected to work. The author did not confirm this.
+The author started all three titles and confirmed for each one that the mod
+loads, that the shader change applies, and that the `SD-GYRO` page opens.
+
+The author tilted the console by hand with one title only. The other two use
+the same engine, the same shader and the same sensor, so the movement is
+expected to be the same. The author did not confirm this by hand.
+
+## Other mods
+
+This mod needs GBC FX. A mod that turns GBC FX off therefore stops this mod.
+
+The DramaticShape voxel mod does this from version 1.3.0. That version
+removes GBC FX from the options menu and holds it at zero while it is
+installed. Its documentation gives the reason: its own 3D view and a
+full-screen GBC FX pass fight each other.
+
+The result is that this mod and that mod cannot both be active from 1.3.0 on:
+
+| DramaticShape version | GBC FX | This mod |
+|---|---|---|
+| not installed | available | works |
+| 1.2.1 and before | available | works |
+| 1.3.0 and after | held at zero | loads, but has no light to move |
+
+This mod does not fail in that condition. The `SENSOR` row shows `GBCFX OFF`,
+and the game keeps its own light.
+
+To use both, disable one of them.
 
 ## Licence
 
