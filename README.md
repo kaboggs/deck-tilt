@@ -188,6 +188,8 @@ Push **B** to go back to the rows.
 | `UP/DOWN AMT` | SUBTLE to MAX | HIGH |
 | `SMOOTHING` | TIGHT / NORMAL / LOOSE | TIGHT |
 | `SHADOW` | FOLLOW / FIXED / OFF | FOLLOW |
+| `3D LIGHT` | AUTO / ON / OFF | AUTO |
+| `COLOUR` | SUBTLE / FULL / OFF | SUBTLE |
 | `QUICK CENTRE` | ON / OFF | ON |
 | `RECENTRE` | action | — |
 | `RESET ALL` | action | — |
@@ -375,7 +377,32 @@ The result is that this mod and that mod cannot both be active from 1.3.0 on:
 This mod does not fail in that condition. The `SENSOR` row shows `GBCFX OFF`,
 and the game keeps its own light.
 
-To use both, disable one of them.
+### Draw the light anyway
+
+The `3D LIGHT` row makes this mod draw the light itself when GBC FX is not
+available. It draws only three things: the glare, the colour and the drop
+shadow. It does not draw the back plate or the screen grid, which are the
+parts that fight a 3D view.
+
+It changes nothing else. It does not move the sun of the 3D mod. It does not
+change the shadows of the 3D mod. It does not change the day and night cycle.
+It does not write to the GBC FX setting, so the other mod keeps that setting
+at zero and the two do not fight.
+
+| Value | Result |
+|---|---|
+| `AUTO` | Draw the light only when GBC FX is off. This is the initial value. |
+| `ON` | Always draw the light. |
+| `OFF` | Never draw the light. |
+
+`AUTO` changes nothing while GBC FX works. The game keeps its own light and
+this mod keeps moving it, as before.
+
+Use `COLOUR` to set how much colour the light adds, or to remove the colour.
+The colour is a set of rings around the light. On a large pale surface the
+rings can look like thin lines, so `SUBTLE` is the initial value.
+
+Use `SHADOW` `OFF` to remove the drop shadow by itself.
 
 ## Licence
 

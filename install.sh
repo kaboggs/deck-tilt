@@ -22,7 +22,7 @@ SRC="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 FILES=(
   manifest.json main.lua LICENSE NOTICE.md README.md install.sh
   lib/AxisMap.lua lib/DeckSprite.lua lib/GbcLight.lua lib/GyroMenu.lua
-  lib/HelpScreen.lua lib/Imu.lua lib/Motion.lua lib/Setting.lua
+  lib/HelpScreen.lua lib/Imu.lua lib/Motion.lua lib/Overlay.lua lib/Setting.lua
   lib/Settings.lua
   tests/deck_tilt_test.lua
   docs/axis-map.gif docs/axis-map.png docs/help-page.png docs/sd-gyro-menu.png

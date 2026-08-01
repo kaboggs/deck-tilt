@@ -146,7 +146,7 @@ local schema = Settings.schema()
 local function schemaFor(key)
   for _, row in ipairs(schema) do if row.key == key then return row end end
 end
-T.eq(#schema, 10, "ten settings are defined")
+T.eq(#schema, 12, "twelve settings are defined")
 T.eq(schema[1].key, "motion", "MOTION leads")
 -- assert the SCHEMA default, not the live value: the live one resolves
 -- through mod.options against whatever the player last saved, so asserting
@@ -459,6 +459,103 @@ do
         :format(name, x + #text * 8 + ROOM))
     T.check(y + 8 + ROOM <= 144,
       ("%s ends at y=%d with shadow room, inside 144"):format(name, y + 8 + ROOM))
+  end
+end
+
+
+-- ------- the overlay path
+--
+-- The 3D voxel mod holds GBC FX at zero while installed, so the engine stops
+-- calling present() at all.  These assert the two things that path turns on:
+-- that we only draw when we mean to, and that we never ask for the option
+-- the other mod is pinning.
+
+do
+  local GBCFX = require("src.render.GBCFX")
+  local Overlay = V.require("Overlay")
+  local level0 = function() GBCFX.setLevel(0) end
+
+  T.check(Overlay.SHADER_SRC ~= nil, "the overlay ships its own shader")
+  T.check(not Overlay.SHADER_SRC:find("BACK_BRIGHTNESS", 1, true),
+    "which has no backing plate -- the part that fights a 3D view")
+  T.check(not Overlay.SHADER_SRC:find("BRIGHTEN_LCD", 1, true),
+    "and no LCD subpixel grid")
+  T.check(Overlay.SHADER_SRC:find("GLARE_INTENSITY", 1, true) ~= nil,
+    "but it keeps the glare")
+  T.check(Overlay.SHADER_SRC:find("SHIMMER_CHROMA_GAIN", 1, true) ~= nil,
+    "and the rainbow shimmer")
+  -- the engine's 3.0 assumes a backing-blended frame; this pass has none
+  T.check(Overlay.SHADER_SRC:find("SHIMMER_CHROMA_GAIN 1%.0") ~= nil,
+    "at a gain that suits an unblended frame, not the engine's 3.0")
+  T.eq(GbcLight.shimmerAmount(), 0.55, "COLOUR defaults to SUBTLE")
+  Settings.shimmer:setPos(3)
+  T.eq(GbcLight.shimmerAmount(), 0, "and OFF removes the colour entirely")
+  Settings.shimmer:setPos(2)
+  T.eq(GbcLight.shimmerAmount(), 1.0, "and FULL matches the engine's strength")
+  Settings.shimmer:setPos(1)
+  T.check(Overlay.SHADER_SRC:find("deckShadowOff", 1, true) ~= nil,
+    "and it takes the drop-shadow offset this mod computes")
+
+  -- OFF must mean off, whatever else is true
+  level0()
+  Settings.overlay:setPos(3)                       -- OFF
+  T.eq(Settings.overlay:get(), "off", "3D LIGHT can be set to OFF")
+  T.eq(GbcLight.overlayWanted(), false, "and then the overlay never draws")
+  T.eq(GbcLight.status(), "GBCFX OFF",
+    "and the status row says the light is gone, because it is")
+
+  -- AUTO draws only when the light is actually missing
+  Settings.overlay:setPos(1)                       -- AUTO
+  T.eq(Settings.overlay:get(), "auto", "AUTO is the shipped default")
+  level0()
+  T.eq(GbcLight.overlayWanted(), true,
+    "AUTO draws when something else has pinned GBC FX off")
+  GBCFX.setLevel(4)
+  T.eq(GbcLight.overlayWanted(), false,
+    "and stands down the moment the engine has its own light back")
+
+  -- ON is unconditional
+  Settings.overlay:setPos(2)
+  T.eq(GbcLight.overlayWanted(), true, "ON draws whatever the level is")
+
+  -- MOTION off outranks all three
+  local keep = Settings.motion:pos()
+  Settings.motion:setPos(3)
+  T.eq(Settings.motion:get(), "off", "MOTION can be off")
+  T.eq(GbcLight.overlayWanted(), false, "and then nothing draws, ON or not")
+  Settings.motion:setPos(keep)
+  Settings.overlay:setPos(1)
+  GBCFX.setLevel(4)
+end
+
+
+-- GLSL reserved words in the overlay shader.
+--
+-- This suite cannot compile GLSL: the harness has no GPU and love.graphics is
+-- a stub.  So the first version of this shader used `cast` as a variable, and
+-- nothing here objected -- it failed at runtime on the device, and the mod
+-- fell back to the stock pass and looked exactly like a mod that was working.
+-- A silent fallback is the worst failure shape there is.
+--
+-- Compiling is out of reach; reading is not.  tests/drivers/deck_tilt_glsl.lua
+-- does the real compile on hardware.
+do
+  local Overlay = V.require("Overlay")
+  local RESERVED = {
+    "cast", "asm", "union", "enum", "typedef", "template", "this", "packed",
+    "goto", "switch", "default", "inline", "noinline", "public", "static",
+    "extern", "external", "interface", "long", "short", "double", "half",
+    "fixed", "unsigned", "input", "output", "hvec2", "hvec3", "hvec4",
+    "sampler3D", "namespace", "using",
+  }
+  local body = Overlay.SHADER_SRC
+  for _, word in ipairs(RESERVED) do
+    -- as an identifier being DECLARED or ASSIGNED, not inside a comment or a
+    -- longer word: "extern number time" is legal and must not trip this
+    local bad = body:find("%f[%w_]float%s+" .. word .. "%f[^%w_]")
+              or body:find("%f[%w_]vec[234]%s+" .. word .. "%f[^%w_]")
+              or body:find("%f[%w_]" .. word .. "%s*=[^=]")
+    T.check(not bad, ("the overlay shader does not use %q as an identifier"):format(word))
   end
 end
 

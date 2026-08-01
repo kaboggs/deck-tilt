@@ -204,8 +204,17 @@ end
 -- not driving -- so with MOTION off, GBC FX off, or no IMU, what gets drawn
 -- is the engine's own output, not an imitation of it.
 local function present(canvas, pixelScale)
+  -- GBC FX off, but the overlay wants the frame: draw the light on our own
+  -- pass instead of handing back.  Checked BEFORE build(), because build()
+  -- patches the ENGINE's shader and that is not the shader this path uses.
+  if (GBCFX.level or 0) <= 0 then
+    if GbcLight.overlayWanted() then
+      return GbcLight.presentOverlay(canvas, pixelScale)
+    end
+    return stockPresent(canvas, pixelScale)
+  end
   local sh = build()
-  if not sh or (GBCFX.level or 0) <= 0 then
+  if not sh then
     return stockPresent(canvas, pixelScale)
   end
 
@@ -248,10 +257,79 @@ local function present(canvas, pixelScale)
   GbcLight.lightX, GbcLight.lightY = lx, ly
 end
 
+-- Is another mod holding GBC FX off, and do we mean to draw anyway?
+--
+-- AUTO deliberately does NOT ask which mod is responsible.  Any mod may pin
+-- the level, and a list of names here would be wrong the moment a new one
+-- appeared -- so the question asked is the one that matters: is the light
+-- gone.  ON is the same answer without the condition, for a player who wants
+-- the overlay over a plain frame too.
+function GbcLight.overlayWanted()
+  if Settings.motion:get() == "off" then return false end
+  local mode = Settings.overlay:get()
+  if mode == "off" then return false end
+  if mode == "on" then return true end
+  return (GBCFX.level or 0) <= 0        -- auto
+end
+
+-- SUBTLE is not a smaller number picked by feel: at 1.0 the bands are the
+-- engine's own strength, which is calibrated for a backing-blended frame and
+-- is visibly too much here.  See Overlay's SHIMMER_CHROMA_GAIN.
+local SHIMMER = { subtle = 0.55, full = 1.0, off = 0 }
+
+function GbcLight.shimmerAmount()
+  return SHIMMER[Settings.shimmer:get()] or SHIMMER.subtle
+end
+
+-- Our own pass, over whatever the engine composed -- including another mod's
+-- 3D render.  Nothing here reads or writes options.gbcfx, so a mod that pins
+-- that value has nothing to fight: it keeps its zero and we never ask for it.
+function GbcLight.presentOverlay(canvas, pixelScale)
+  local Overlay = V.require("Overlay")
+  local sh = Overlay.shader()
+  if not sh then return stockPresent(canvas, pixelScale) end
+
+  local dt = (love.timer and love.timer.getDelta and love.timer.getDelta()) or 0
+  local lx, ly = Motion.light(dt)
+  if not lx then return stockPresent(canvas, pixelScale) end
+
+  local t = (love.timer and love.timer.getTime and love.timer.getTime()) or 0
+  local mode = Settings.shadow:get()
+  local ox, oy = GbcLight.shadowOffset(lx, ly, mode)
+  local ok = pcall(function()
+    sh:send("time", t)
+    sh:send("pixelScale", math.max(1, math.floor(tonumber(pixelScale) or 1)))
+    sh:send("deckLight", { lx, ly })
+    sh:send("deckShadowOff", { ox, oy })
+    sh:send("deckShadowAmt", (mode == "off") and 0 or 1)
+    sh:send("deckGlare", 1)
+    sh:send("deckShimmer", GbcLight.shimmerAmount())
+  end)
+  if not ok then return stockPresent(canvas, pixelScale) end
+
+  love.graphics.setShader(sh)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.draw(canvas, 0, 0)
+  love.graphics.setShader()
+
+  GbcLight.overlayFrames = (GbcLight.overlayFrames or 0) + 1
+  GbcLight.shadowX, GbcLight.shadowY = ox, oy
+  GbcLight.lightX, GbcLight.lightY = lx, ly
+end
+
 function GbcLight.install()
   if installed then return end
   installed = true
   GBCFX.present = present
+  -- The engine only calls present() when GBCFX.active() is true, and that is
+  -- false at level 0 -- which is exactly the condition the overlay exists
+  -- for.  So active() has to answer for the overlay as well, or the pass it
+  -- gates is never reached.  Stock answer otherwise, untouched.
+  local stockActive = GBCFX.active
+  GBCFX.active = function(...)
+    if GbcLight.overlayWanted() and (GBCFX.level or 0) <= 0 then return true end
+    return stockActive(...)
+  end
 end
 
 -- What the mod's status row shows.  Our own trouble outranks the IMU's:
@@ -259,8 +337,17 @@ end
 function GbcLight.status()
   local Imu = V.require("Imu")
   if Settings.motion:get() == "off" then return "OFF" end
+  if (GBCFX.level or 0) <= 0 then
+    -- "GBCFX OFF" is only the whole story when nothing is drawing.  With the
+    -- overlay running the mod IS working, and saying otherwise sends someone
+    -- to fix a setting that is not the problem.
+    if GbcLight.overlayWanted() then
+      local Overlay = V.require("Overlay")
+      return Overlay.status() or Imu.status
+    end
+    return "GBCFX OFF"
+  end
   if shader == false then return failure or "ERROR" end
-  if (GBCFX.level or 0) <= 0 then return "GBCFX OFF" end
   return Imu.status
 end
 

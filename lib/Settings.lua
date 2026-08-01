@@ -93,6 +93,43 @@ Settings.shadow = Setting.new("shadow", "SHADOW",
   .. "OFF removes the shadow.",
   "follow")
 
+-- What to do when the engine's own GBC FX is not available.
+--
+-- The 3D voxel mod holds GBC FX at zero while it is installed, because a
+-- full-screen LCD simulation over a diorama fights it.  That is a fair call
+-- about the PANEL -- the backing plate, the subpixel grid -- and it is not
+-- a call about the light.  OVERLAY draws the light on its own: the glare,
+-- the coloured shimmer and a drop shadow, and none of the panel.
+--
+-- AUTO rather than ON by default, because it must not change what anyone
+-- already has.  With GBC FX available nothing here runs at all; the engine
+-- keeps its light and this mod keeps moving it, exactly as before.
+Settings.overlay = Setting.new("overlay", "3D LIGHT",
+  { "auto", "on", "off" }, { "AUTO", "ON", "OFF" },
+  "What to do when the GBC FX light is not available. Another mod can hold "
+  .. "GBC FX off. AUTO draws the light again in that condition only. ON "
+  .. "always draws it. OFF never draws it, and this mod then does nothing "
+  .. "while GBC FX is off. The light is the glare, the colour and the drop "
+  .. "shadow. It does not change the 3D world or its own shadows. Use the "
+  .. "SHADOW row to remove the drop shadow by itself.",
+  "auto")
+
+-- How strong the coloured shimmer is on the overlay pass.
+--
+-- Its own row because it is the part most likely to be unwanted: the bands
+-- are thin-film interference rings, and over a large flat pale surface they
+-- have nothing to break them up and read as contour lines rather than as
+-- iridescence. SUBTLE is the default for that reason. This row does not
+-- touch the engine's own GBC FX shimmer, which is fixed at level 4.
+Settings.shimmer = Setting.new("shimmer", "COLOUR", 
+  { "subtle", "full", "off" }, { "SUBTLE", "FULL", "OFF" },
+  "How much colour the light adds on the 3D LIGHT overlay. The colour is a "
+  .. "set of rings around the light. SUBTLE is less strong. FULL is as "
+  .. "strong as the game's own effect. OFF removes the colour and keeps the "
+  .. "glare and the drop shadow. This row does nothing when the game draws "
+  .. "its own GBC FX light.",
+  "subtle")
+
 -- A recentre you can reach without opening a menu.
 --
 -- The obvious gesture -- touching both capacitive stick tops -- turned out to
@@ -113,7 +150,8 @@ Settings.order = { Settings.motion,
                    Settings.srcx, Settings.signx,
                    Settings.srcy, Settings.signy,
                    Settings.xrange, Settings.yrange,
-                   Settings.smooth, Settings.shadow, Settings.hotkey }
+                   Settings.smooth, Settings.shadow,
+  Settings.overlay, Settings.shimmer, Settings.hotkey }
 
 function Settings.schema()
   local out = {}
