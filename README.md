@@ -26,8 +26,8 @@ Give these when you report a problem. The mod reads its own version from
 | Part | Name | Version tested |
 |---|---|---|
 | This mod | Deck Tilt (`DECK_TILT`) | 0.2.0 |
-| Host engine | `gen1recomp` | `main`, after tag `v0.1.47`. Reports `0.0.0-dev` |
-| 3D mod (optional) | DramaticShape Voxel Mod (`DRAMATIC_SHAPE`) | 1.3.1 |
+| Host engine | `gen1recomp` | `main`, after tag `v0.1.65`; also after `v0.1.47`. Reports `0.0.0-dev` |
+| 3D mod (optional) | DramaticShape Voxel Mod (`DRAMATIC_SHAPE`) | 1.5.5; also 1.3.1 |
 | Runtime | LOVE | 11.5 |
 
 The engine reports `0.0.0-dev` when it is a source checkout rather than a
@@ -483,6 +483,12 @@ reason: its own 3D view and a full-screen GBC FX pass fight each other.
 Both mods can be active together. Set `3D LIGHT` to `OFF` if you would rather
 this mod did nothing while that one is installed. The `SENSOR` row then shows
 `GBCFX OFF`.
+
+That mod still holds GBC FX at zero at 1.5.5, so the overlay is still the path
+this mod takes, and the arrangement above is unchanged. 1.5.5 also adds the
+free-roam `1ST` and `3RD` camera rungs; this mod claims no hotkey and does not
+read the pad, and that mod excludes the accelerometer when it picks a
+controller for its look, so the two do not contend for input.
 
 ## Licence
 
