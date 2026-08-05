@@ -18,21 +18,75 @@ Without this mod, the game moves the light on a fixed cycle. The cycle takes
 48 seconds in one direction and 90 seconds in the other. The light therefore
 looks almost static.
 
-## Versions
+## Supported versions
 
 Give these when you report a problem. The mod reads its own version from
 `manifest.json`; the `SD-GYRO` page shows the sensor state next to it.
 
-| Part | Name | Version tested |
-|---|---|---|
-| This mod | Deck Tilt (`DECK_TILT`) | 0.2.0 |
-| Host engine | `gen1recomp` | `main`, after tag `v0.1.65`; also after `v0.1.47`. Reports `0.0.0-dev` |
-| 3D mod (optional) | DramaticShape Voxel Mod (`DRAMATIC_SHAPE`) | 1.5.5; also 1.3.1 |
-| Runtime | LOVE | 11.5 |
+### What this release was tested against
 
-The engine reports `0.0.0-dev` when it is a source checkout rather than a
-tagged release. The manifest of this mod accepts that, and also accepts
-`>=0.1.37 <2.0.0`.
+| Part | Name | Tested |
+|---|---|---|
+| This mod | Deck Tilt (`DECK_TILT`) | **0.3.0** |
+| Host engine | `gen1recomp` | `main`, after tag **`v0.1.69`** |
+| 3D mod (optional) | DramaticShape Voxel Mod (`DRAMATIC_SHAPE`) | **1.6.0** |
+| Runtime | LOVE | **11.5** |
+| Console | Steam Deck (Valve `Galileo`), SteamOS | — |
+| Titles | Red, Blue, Yellow | all three |
+
+### Everything this has been confirmed on
+
+Kept so an older install can tell whether its combination was ever tried.
+`ok` means the mod loaded, moved the light, and the test suite passed against
+that engine's real shader source.
+
+| Deck Tilt | Engine | 3D mod | Result |
+|---|---|---|---|
+| 0.3.0 | `main` after `v0.1.69` | 1.6.0 | ok — current |
+| 0.2.0 | `main` after `v0.1.65` | 1.5.5 | ok |
+| 0.2.0 | `main` after `v0.1.47` | 1.3.1 | ok |
+| 0.1.x | `main` after `v0.1.47` | 1.2.1 | ok, and the last pairing where `GBC FX` is left alone — see below |
+
+### What the version range in the manifest means
+
+The manifest accepts `0.0.0-dev || >=0.1.37 <2.0.0`.
+
+- `>=0.1.37` is the floor because that is where the engine's mod API reached
+  `api: 2` with the `ui.options.rows` hook this mod registers its row through.
+- `<2.0.0` is a guess about a major version that does not exist yet, not a
+  tested bound.
+- `0.0.0-dev` is what the engine reports when it is a **source checkout**
+  rather than a tagged release, which is how most people run it. Without that
+  clause the mod is refused on a checkout with *"needs game version >=0.1.37,
+  engine is 0.0.0-dev"* — which looks like an incompatibility and is not one.
+  If you install a mod that lacks the clause, adding `0.0.0-dev || ` to the
+  front of its `game_version` is the whole fix.
+
+### The one engine internal this depends on
+
+`src/render/GBCFX.lua` must declare its light position as a statement the mod
+can find and rewrite. That is the only assumption made about engine internals,
+and it is the thing an engine update can break silently — the effect would
+just stop, on a machine you may not be holding. So `tests/deck_tilt_test.lua`
+runs the substitution against the engine's **actual current shader source** on
+every run rather than against a copy. If a future engine rephrases that line,
+the suite fails loudly instead of the mod failing quietly.
+
+That file has now been byte-identical across every engine release from
+`v0.1.47` to after `v0.1.69`.
+
+### With the DramaticShape voxel mod
+
+From **1.3.0** onward that mod holds `GBC FX` at zero while it is installed,
+and removes both `GBC FX` and `TILT` from the options menu. Deck Tilt moves
+the `GBC FX` light, so with the voxel mod on there is no engine light to move
+and this mod draws its own overlay instead — see
+[Two ways to draw the light](#two-ways-to-draw-the-light). That is the
+arrangement 0.2.0 onward was built for, and it is not a fault: a smoke test
+reporting `GBCFX_LEVEL=0` with `DECK_TILT=loaded` is the expected result.
+
+**1.2.1 is the last voxel-mod version that leaves `GBC FX` alone**, if you
+would rather have the engine's own light.
 
 ## Requirements
 
@@ -182,7 +236,23 @@ To turn this off, set `QUICK CENTRE` to `OFF`.
 
 ## Options
 
-Open `OPTIONS`, then select `SD-GYRO`.
+Open `OPTIONS`, then select `SD-GYRO`. **Both option menus work** — the one
+on the title screen, and the one inside the game at `START` → `OPTION`. It is
+the same menu and the same row; there is nothing to open in a particular
+place.
+
+`SD-GYRO` sits in the display group, directly under `GBC FX` — the light this
+mod moves. Where `GBC FX` is not on the menu, it sits under `TILT`, and where
+neither is, under `COLORS`. The DramaticShape voxel mod removes both `GBC FX`
+and `TILT` while it is installed, so with that mod the row follows `COLORS`.
+
+> **From 0.3.0.** Before that the row was added to the END of the menu. That
+> was fine when this was the only mod installed. With ten installed it came
+> out row 38 of 38, below `MODS` and `CONTROLS`, and the menu shows four rows
+> at a time — so the row was nine pages down, and was reported as missing from
+> the in-game menu. It was in both menus the whole time. Neither could reach
+> it. If you are on 0.2.0 or older and cannot find `SD-GYRO`, hold **DOWN** at
+> the bottom of the options list.
 
 ![The SD-GYRO page](docs/sd-gyro-menu.png)
 
@@ -484,11 +554,19 @@ Both mods can be active together. Set `3D LIGHT` to `OFF` if you would rather
 this mod did nothing while that one is installed. The `SENSOR` row then shows
 `GBCFX OFF`.
 
-That mod still holds GBC FX at zero at 1.5.5, so the overlay is still the path
-this mod takes, and the arrangement above is unchanged. 1.5.5 also adds the
-free-roam `1ST` and `3RD` camera rungs; this mod claims no hotkey and does not
-read the pad, and that mod excludes the accelerometer when it picks a
-controller for its look, so the two do not contend for input.
+That mod still holds GBC FX at zero at **1.6.0**, so the overlay is still the
+path this mod takes, and the arrangement above is unchanged. It also removes
+`GBC FX` and `TILT` from the options menu, which is why `SD-GYRO` anchors to
+`COLORS` on an install that has it — see [Options](#options).
+
+1.5.5 added the free-roam `1ST` and `3RD` camera rungs, and 1.6.0 the
+`STADIUM` battle rungs. This mod claims no hotkey and does not read the pad,
+and that mod excludes the accelerometer when it picks a controller for its
+look, so the two do not contend for input.
+
+Still not specifically reported on: whether the glare pass *looks* right drawn
+over a first-person 3D view, as opposed to merely running. `3D LIGHT` → `OFF`
+disables just that if it does not.
 
 ## Licence
 

@@ -30,7 +30,21 @@ T.eq(#run.errors, 0,
 
 local exports = run.loader.exports.DECK_TILT
 T.check(type(exports) == "table", "the mod publishes its exports")
-T.eq(exports.version, "0.2.0", "carrying its version")
+
+-- Read the expected version OUT OF THE MANIFEST rather than writing it here.
+-- A literal in this line is the exact trap main.lua describes: it went stale
+-- the moment the manifest was bumped, and the only thing that noticed was
+-- this assertion failing for a version bump that was entirely correct. What
+-- is worth asserting is that exports.version AGREES with the manifest -- that
+-- the mod is not carrying a second, hardcoded copy of its own version -- and
+-- that survives every bump without an edit.
+do
+  local manifest = run.mod and run.mod.manifest
+  T.check(type(manifest) == "table" and manifest.version ~= nil,
+    "the manifest declares a version")
+  T.eq(exports.version, manifest.version,
+    "and the exported version is that one, not a second copy of it")
+end
 
 local V = exports.lib
 T.check(type(V) == "table" and type(V.require) == "function",
@@ -757,6 +771,69 @@ T.check(dx >= Motion.FRAME.xMin and dx <= Motion.FRAME.xMax
         and dy >= Motion.FRAME.yMin and dy <= Motion.FRAME.yMax,
   ("and keeps it inside the frame (%.2f, %.2f)"):format(dx or -9, dy or -9))
 Settings.motion:sync("tilt")
+
+-- ------- the SD-GYRO row must be findable, not merely present
+--
+-- The row was APPENDED for the whole of 0.1.x and 0.2.0, which was correct
+-- while this was the only mod installed and wrong at ten: measured on a real
+-- install it came out row 38 of 38, below `mods` and `controls`. OptionRows
+-- draws FOUR rows at a time, so it sat nine pages down on both the title menu
+-- and the in-game START -> OPTION menu, and was reported as missing from the
+-- second. It was in both. Nobody could reach it in either.
+--
+-- Present-and-unreachable is the failure this asserts against, so "is the row
+-- there" is not enough -- these check WHERE.
+do
+  local hooks = run.loader.hooks
+
+  -- vanilla stands in for the engine's own buildRows: ids only, in the order
+  -- OptionsMenu emits them, with the anchors this mod looks for.
+  local function vanilla(_, rows) return rows end
+  local function indexOf(rows, id)
+    for i, r in ipairs(rows) do if r.id == id then return i end end
+    return nil
+  end
+  local function callWith(list)
+    local rows = {}
+    for i, id in ipairs(list) do rows[i] = { id = id } end
+    return hooks:call("ui.options.rows", vanilla, nil, rows)
+  end
+
+  -- 1. the engine's own display group, gbcfx present: the row's natural home
+  local out = callWith({ "colors", "gbcfx", "tilt", "zoom", "mods", "controls" })
+  T.eq(indexOf(out, "DECK_TILT:gyro"), indexOf(out, "gbcfx") + 1,
+    "SD-GYRO sits directly under GBC FX -- the light it moves")
+
+  -- 2. DRAMATIC_SHAPE installed, which removes BOTH gbcfx and tilt. This is
+  --    the arrangement on the author's own machine, so it is the case that
+  --    actually ships.
+  out = callWith({ "textSpeed", "colors", "zoom", "videoMode", "mods", "controls" })
+  T.eq(indexOf(out, "DECK_TILT:gyro"), indexOf(out, "colors") + 1,
+    "with GBC FX and TILT gone it falls back to COLORS, still in the display "
+    .. "group")
+  T.check(indexOf(out, "DECK_TILT:gyro") < indexOf(out, "mods"),
+    "and above MODS/CONTROLS rather than below them, where it cannot be found")
+
+  -- 3. no anchor at all -- a future engine renaming all three. A row in the
+  --    wrong place is a nuisance; a LOST row is a bug, so this must append
+  --    rather than drop.
+  out = callWith({ "aaa", "bbb" })
+  T.eq(indexOf(out, "DECK_TILT:gyro"), 3,
+    "with no anchor to find it appends, rather than losing the row")
+
+  -- 4. nothing else may be disturbed. The splice is an insert, so every row
+  --    the engine and every other mod supplied must survive it, in order.
+  local before = { "colors", "gbcfx", "zoom", "OTHER_MOD:row", "mods" }
+  out = callWith(before)
+  T.eq(#out, #before + 1, "exactly one row is added")
+  local kept = {}
+  for _, r in ipairs(out) do
+    if r.id ~= "DECK_TILT:gyro" then kept[#kept + 1] = r.id end
+  end
+  T.eq(table.concat(kept, ","), table.concat(before, ","),
+    "and every other row survives in its original order -- including another "
+    .. "mod's")
+end
 
 run.release()
 

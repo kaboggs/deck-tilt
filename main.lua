@@ -77,23 +77,67 @@ GbcLight.install()
 
 mod.options:define(Settings.schema())
 
--- call next() first and append, so every other mod's rows survive this one
--- ONE row on the main OPTIONS menu, not nine.
+-- call next() first, so every other mod's rows survive this one, then SPLICE
+-- ours into the display group rather than appending it.
 --
--- The mod had grown to more rows than the engine's entire display section,
--- for something most players set once.  The row carries the sensor state as
--- its value so the page is still worth a glance without opening it -- ASLEEP
--- there tells you the gyro is off in Steam Input, which is the one failure
--- you cannot diagnose from inside the game.
+-- ONE row on the main OPTIONS menu, not nine.  The mod had grown to more rows
+-- than the engine's entire display section, for something most players set
+-- once.  The row carries the sensor state as its value so the page is still
+-- worth a glance without opening it -- ASLEEP there tells you the gyro is off
+-- in Steam Input, which is the one failure you cannot diagnose from inside
+-- the game.
+--
+-- ------- why this is spliced and no longer appended
+--
+-- Appending was fine when this was the only mod installed.  It is not fine at
+-- ten: measured on the author's own install, `DECK_TILT:gyro` came out row 38
+-- of 38, below `mods` and `controls`, and OptionRows shows FOUR rows at a
+-- time -- so the row existed on both the title menu and the in-game START ->
+-- OPTION menu and was reachable from neither without nine pages of scrolling.
+-- A row nobody can find is indistinguishable from a row that was never
+-- registered, and that is exactly how it was reported: "it is not in the
+-- in-game menu".  It was.
+--
+-- So anchor it where it belongs instead.  This is the engine's own pattern --
+-- OptionsMenu splices a mod's render-pipeline rows in after `tilt` for the
+-- same reason (src/ui/OptionsMenu.lua) rather than letting them fall to the
+-- end.
+--
+-- The anchor is tried in order of how closely the row relates to what this
+-- mod actually does:
+--
+--   gbcfx   the light this mod moves.  Its natural home.
+--   tilt    the other motion row; gone from 1.3.0 of the 3D mod on.
+--   colors  the top of the display group, which is where the first two live.
+--
+-- DRAMATIC_SHAPE removes BOTH `gbcfx` and `tilt` from the menu while it is
+-- installed, which is why there are three anchors and not one -- on this
+-- install only `colors` is ever found.  If none is (a future engine could
+-- rename all three), fall back to the old append: a row in the wrong place
+-- is a nuisance, a lost row is a bug.
+local ANCHORS = { "gbcfx", "tilt", "colors" }
+
 mod.hooks:wrap("ui.options.rows", function(next, game, rows)
   local out = next(game, rows)
   if type(out) ~= "table" then return out end
-  out[#out + 1] = {
+
+  local row = {
     id = "DECK_TILT:gyro",
     label = "SD-GYRO",
     value = function() return GbcLight.status() end,
     activate = function(g) mod.ui.push(g, SCREEN) end,
   }
+
+  for _, anchor in ipairs(ANCHORS) do
+    for i = 1, #out do
+      if out[i] and out[i].id == anchor then
+        table.insert(out, i + 1, row)
+        return out
+      end
+    end
+  end
+
+  out[#out + 1] = row
   return out
 end)
 
