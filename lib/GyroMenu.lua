@@ -122,6 +122,20 @@ function GyroMenu.new(game)
     -- carried alongside the descriptor so SELECT has something to show;
     -- OptionRows ignores fields it does not know about
     row.helpTitle, row.helpBody = setting.label, setting.help
+    -- CRT ROLL is the one setting whose usefulness depends on the DISPLAY
+    -- rather than on the picture, and no player knows their refresh rate off
+    -- hand. So the row carries the measurement next to its value, for the
+    -- same reason SENSOR carries ASLEEP: the thing you need in order to know
+    -- whether this setting can do anything is not visible from the setting.
+    if setting.key == "beamroll" then
+      local base = row.value
+      row.value = function(g)
+        local CrtBeam = V.require("CrtBeam")
+        local note = CrtBeam.rollStatus()
+        local text = base(g)
+        return note and (text .. " " .. note) or text
+      end
+    end
     add(row)
     if setting.key == "motion" then add(axisRow) end
   end

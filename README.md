@@ -27,12 +27,12 @@ Give these when you report a problem. The mod reads its own version from
 
 | Part | Name | Tested |
 |---|---|---|
-| This mod | Deck Tilt (`DECK_TILT`) | **0.4.0** |
+| This mod | Deck Tilt (`DECK_TILT`) | **0.5.0** |
 | Host engine | `gen1recomp` | `main`, after tag **`v0.1.69`** |
 | 3D mod (optional) | DramaticShape Voxel Mod (`DRAMATIC_SHAPE`) | **1.6.0** |
 | Runtime | LOVE | **11.5** |
 | Console | Steam Deck (Valve `Galileo`), SteamOS | — |
-| Titles | Red, Blue, Yellow | all three |
+| Titles | Red, Blue, Yellow | all three, on hardware |
 
 ### Everything this has been confirmed on
 
@@ -42,11 +42,39 @@ that engine's real shader source.
 
 | Deck Tilt | Engine | 3D mod | Result |
 |---|---|---|---|
-| 0.4.0 | `main` after `v0.1.69` | 1.6.0 | ok — current |
+| 0.5.0 | `main` after `v0.1.69` | 1.6.0 | ok — current |
+| 0.4.0 | `main` after `v0.1.69` | 1.6.0 | ok |
 | 0.3.0 | `main` after `v0.1.69` | 1.6.0 | ok |
 | 0.2.0 | `main` after `v0.1.65` | 1.5.5 | ok |
 | 0.2.0 | `main` after `v0.1.47` | 1.3.1 | ok |
 | 0.1.x | `main` after `v0.1.47` | 1.2.1 | ok, and the last pairing where `GBC FX` is left alone — see below |
+
+### Mods this was confirmed alongside
+
+Deck Tilt claims no hotkey and owns no pass of the frame, so it is designed to
+sit beside other mods rather than around them. Every mod below was installed
+at the same time as this release and the whole set was checked together on
+Red, Blue and Yellow: all loaded, no errors, and the light, the shadow and the
+TV/RF and CRT passes all still drew.
+
+| Mod | Version |
+|---|---|
+| Dramatic Shape Voxel Mod (`DRAMATIC_SHAPE`) | 1.6.0 |
+| Wilds of Kanto (`overworld_wild_spawns`) | 1.7.1 |
+| All Pokémon Catchable 151 (`all_pokemon_catchable_151_mod`) | 0.3.3-beta |
+| Quality of Life (`quality_of_life`) | 1.2.4 |
+| Gen 3 Box (`gen3_box`) | 1.3.0 |
+| 999 Bag Slots (`bag_999`) | 1.2.0 |
+| Multiple Save Slots (`MULTI_SAVE_SLOTS`) | 1.0.0 |
+| Access PC Anywhere (`ACCESS_PC_ANYWHERE`) | 1.0.1 |
+| Controller Rumble (`CONTROLLER_RUMBLE`) | 1.0.3 |
+| Run Mode (`RUN_MODE`) | 1.2.0 |
+
+Two of these want buttons this mod does not: `bag_999` sorts on **R3**, which
+Dramatic Shape also uses for its battle lens, and Quality of Life's easy
+interactions claim **SELECT**, which Dramatic Shape uses for its voxel ladder.
+Deck Tilt's only binding is `LEFT CONTROL` for the quick recentre, and nothing
+else in the set claims it.
 
 ### What the version range in the manifest means
 
@@ -247,14 +275,6 @@ mod moves. Where `GBC FX` is not on the menu, it sits under `TILT`, and where
 neither is, under `COLORS`. The DramaticShape voxel mod removes both `GBC FX`
 and `TILT` while it is installed, so with that mod the row follows `COLORS`.
 
-> **From 0.3.0.** Before that the row was added to the END of the menu. That
-> was fine when this was the only mod installed. With ten installed it came
-> out row 38 of 38, below `MODS` and `CONTROLS`, and the menu shows four rows
-> at a time — so the row was nine pages down, and was reported as missing from
-> the in-game menu. It was in both menus the whole time. Neither could reach
-> it. If you are on 0.2.0 or older and cannot find `SD-GYRO`, hold **DOWN** at
-> the bottom of the options list.
-
 ![The SD-GYRO page](docs/sd-gyro-menu.png)
 
 Push **SELECT** on a row to read a full description of that row. The labels
@@ -287,6 +307,12 @@ Push **B** to go back to the rows.
 | `RF SCAN` | OFF / LOW / NORMAL / HIGH | NORMAL |
 | `RF CURVE` | OFF / LOW / NORMAL / HIGH | LOW |
 | `RF NOISE` | OFF / LOW / NORMAL / HIGH | OFF |
+| `CRT MASK` | OFF / GRILLE / SLOT / SHADOW | **OFF** |
+| `CRT BEAM` | OFF / LOW / NORMAL / HIGH | **OFF** |
+| `CRT GLOW` | OFF / LOW / NORMAL / HIGH | **OFF** |
+| `CRT EDGE` | OFF / LOW / NORMAL / HIGH | **OFF** |
+| `EDGE SOFT` | TIGHT / NORMAL / SOFT / SOFTEST | NORMAL |
+| `CRT ROLL` | OFF / 60HZ / 50HZ / 40HZ | **OFF** |
 | `QUICK CENTRE` | ON / OFF | ON |
 | `RECENTRE` | action | — |
 | `RESET ALL` | action | — |
@@ -590,6 +616,209 @@ No measurable cost. Read that precisely: 11.1 ms is ~90 fps, which is the
 frame cap doing the limiting — so this says the pass **adds no dropped frames**
 at that resolution, not that it is free. It has not been measured uncapped, or
 at 1280×800.
+
+## The electron-beam pass
+
+**All four rows off by default.** Additive with `TV/RF` rather than an
+alternative to it, and independent of it — the RF pass models the **signal**
+arriving at the set, this models the **tube** the signal is painted onto. A
+real television does both; either is useful alone. Every row has its own
+`OFF`, so any of them can be switched off without touching the others.
+
+### Where each piece comes from
+
+| Row | Reference | What is taken |
+|---|---|---|
+| `CRT BEAM` | [crt-royale](https://github.com/libretro/slang-shaders/tree/master/crt/shaders/crt-royale) © TroggleMonkey, GPLv2+ | the beam model |
+| `CRT MASK` | [crt-sony-megatron](https://github.com/libretro/slang-shaders/blob/master/hdr/shaders/crt-sony-megatron.slangp) © Major Pain The Cactus | the **order**: gain, then mask |
+| `CRT GLOW` | crt-royale | halation and diffusion weights |
+| `CRT EDGE` | the famicom RF decoder | the vignette coefficient |
+| `CRT ROLL` | [crt-beam-simulator](https://github.com/blurbusters/crt-beam-simulator) © Mark Rejhon / Timothy Lottes, MIT | the rolling scan, and the blur-reduction relation |
+
+Nothing links against any of them and nothing is copied from them.
+
+**The beam** is royale's one essential idea: a scanline is not a fixed dark
+stripe, the spot *grows with the signal*. A bright line swells until it nearly
+touches its neighbours; a dim one stays thin with black either side.
+
+```
+sigma = beam_min_sigma + (beam_max_sigma - beam_min_sigma) · colourᵇᵉᵃᵐ⁻ˢᵖᵒᵗ⁻ᵖᵒʷᵉʳ
+```
+
+with royale's published defaults kept: min `0.02`, max `0.30`, power `0.33`,
+and a generalised-gaussian shape that also opens with brightness (`2.0` → `4.0`,
+power `0.25`) so a bright line is squarer, not just wider. This is why `CRT
+BEAM` and `RF SCAN` are different rows: RF draws lines of one fixed darkness,
+this draws lines whose width is the picture.
+
+**The mask** is three geometries — `GRILLE` (unbroken Trinitron stripes),
+`SLOT` (stripes broken and staggered every other row), `SHADOW` (round dots on
+a hex lattice). Megatron's contribution isn't the geometry, it's the **order**:
+a mask multiplies two thirds of the picture toward black, so applying it to an
+already-correct image just yields a dim image. A real tube runs the gun harder
+to pay for it. So gain comes first, then the mask — which is what `MASK_GAIN`
+is for, and why the mask rungs don't simply darken. Use some `CRT GLOW` with a
+mask; the glow is what stops the pattern reading as dirt on the screen.
+
+### `CRT EDGE` is two things, not one
+
+A real tube dims towards the edges for two unrelated reasons, and one term
+cannot do both:
+
+- the **vignette** is the gun working at an angle — a broad, smooth falloff
+  strongest in the corners, where the beam is furthest off-axis. `1 − k·r⁴`,
+  with the famicom RF decoder's own `0.18` at `NORMAL`.
+- the **rolloff** is the last few percent of the picture, where the phosphor
+  stops and the bezel and the curve of the glass take over. Narrow and much
+  steeper — and it is the part that actually reads as *a tube*. A vignette
+  alone just looks like a lens.
+
+`EDGE SOFT` is a separate row because softness is a different question from
+strength. `CRT EDGE` says how **dark** the edges get; `EDGE SOFT` says how far
+**in** that reaches and how gradually it arrives — `SOFT` and `SOFTEST` spread
+the same darkness across more of the picture rather than making the corners
+darker, for a gentle wash instead of a hard corner. `NORMAL` is the reference's
+own shape. It does nothing while `CRT EDGE` is `OFF`.
+
+Both terms **bow with the glass**: the vignette is evaluated in the picture's
+own curved coordinates, so the dark border follows the bowed edge instead of
+darkening a flat rectangle over a curved image — which reads as a frame in
+front of the tube rather than the tube's own falloff. It runs after `RF CURVE`
+and before the light.
+
+It runs **after the mask** (a bezel shadows the mask too — a tube does not get
+brighter at the edge just because the phosphor is still there) and **before the
+rolling scan**, which is temporal and should not have its energy budget bent by
+a spatial term.
+
+Deliberately separate from `RF CURVE`, which carries its own vignette tied to
+its barrel distortion. That one belongs to the RF pass's geometry; this one is
+the tube's. With both on they stack, which is correct — two passes modelling
+two things — and it is why this has its own row.
+
+### `CRT ROLL` scales itself to your display
+
+A CRT lights each line for a moment, not for the whole frame. Simulating that
+needs the **display** to refresh several times per simulated tube frame — you
+draw a different slice of the cycle each refresh and the eye integrates them
+back into a whole picture, with less motion blur.
+
+**The row names the tube, not the ratio.** The ratio that is any good depends
+on the display, so a fixed ladder of ratios is right on exactly one machine
+and wrong everywhere else. You choose the tube — 60 Hz is what a real one ran
+at — and the ratio is measured arithmetic:
+
+```
+refreshes per tube frame  =  measured present rate ÷ tube rate
+blur reduction            =  1 − 1/refreshes
+```
+
+That relation is the one behind Blur Busters' own published figures: 120 Hz
+for 60 fps content is N=2 and "up to 50%", 240 Hz is N=4 and 75%, 480 Hz is
+N=8 and 87.5%. All three are asserted in the test suite.
+
+**This works because the engine separates logic from render.** Game logic runs
+on a fixed step — `src/core/FixedStep.STEP` is 1/60 exactly — while
+`src/core/FrameCap` caps only the *render* ("Render-only", says its header). So
+the same 60 Hz game frame is presented more than once, and those repeats are
+the subframes the rolling scan needs. Without that separation every present
+would be new content, the ratio would be 1, and there would be nothing to roll.
+
+Measured on this Deck — 88 presents/second against a 90 Hz panel:
+
+| Tube | Refreshes per frame | Blur reduction |
+|---|---|---|
+| `60HZ` | 1.47 | **32%** |
+| `50HZ` | 1.76 | 43% |
+| `40HZ` | 2.20 | 55% |
+
+**`60HZ` is the right choice here.** A third less motion blur is a real,
+measured improvement, and 60 Hz is the rate a real tube ran at, so it flickers
+no more than the thing it is imitating. The lower rungs buy more clarity and
+pay for it in flicker.
+
+The number beside the row is that reduction, computed from the present rate
+measured on your machine right now — not from the panel's advertised refresh
+and not from the frame cap, either of which can be higher than what is actually
+reaching the screen. `NO HZ` means the display is not refreshing faster than
+the tube you asked for, so there is nothing to roll.
+
+On a 240 Hz display the same `60HZ` choice becomes N=4 — Blur Busters' own
+realtime figure — with no re-tuning. Nothing here is hardcoded to this Deck.
+
+Energy is conserved: each pixel emits its whole brightness once per tube cycle,
+over a window whose *length* is set by how bright it is, so the average across
+a cycle is the original picture. That is what makes it a beam simulation and
+not black-frame insertion. The arithmetic runs in **linear light** — that is
+what the reference's `GAMMA` constant is for, and doing it in sRGB instead is
+what produces the horizontal banding their HOWTO is mostly about.
+
+### Cost
+
+Measured on the Deck at 1024×722, 150 frames per condition:
+
+| | ms/frame |
+|---|---|
+| everything off | 11.26 |
+| beam pass only (mask + beam + glow) | 11.11 |
+| RF **and** beam together | 11.11 |
+
+Same caveat as the RF pass: 11.1 ms is the frame cap, so this says stacking all
+three passes **adds no dropped frames** at that resolution, not that they are
+free.
+
+### The drop shadow
+
+The shadow's occlusion test is made against the frame as it was **before** the
+TV/RF and CRT passes, so what it responds to is the game's own art and the
+angle of the console — never the scan structure or the dot pattern. The
+darkening still lands on the processed picture, so the shadow falls on what you
+can see; only *where* it falls and *which way* it points are decided upstream.
+
+**The glass has thickness.** A drop shadow lands on a plane *behind* the thing
+casting it, and two planes at different depths under one curved sheet displace
+by different amounts. That parallax is what makes a curved screen read as
+having depth rather than as a bent picture, and it works two ways:
+
+- a **lean**: curved glass shifts the apparent light direction as you look away
+  from its axis, so the shadow rotates. Dead centre you look straight through
+  and nothing leans; at `RF CURVE HIGH` the lean reaches 9.8° at 80% across the
+  screen and 33° at the very edge. This is the large, visible part.
+- a **slide**: a small displacement in the same direction, capped below the
+  gyro's own throw so the tilt always stays the dominant motion. 0.87 px
+  against a 1.45 px throw.
+
+Rotation carries the bulk of it on purpose. The gyro and the glass then compose
+— the tilt sets the base direction and the glass leans it — instead of
+competing for the same few pixels of travel.
+
+The glare and the chroma shimmer bow too, but **less** — they are a reflection
+off the *front* of the glass, while the picture is seen through its thickness,
+so they travel a fraction of the distance (`REFLECT_BOW`). That fraction is the
+one number here that is a judgement rather than a measurement.
+
+Verified on hardware: the shadow offset is bit-identical with `RF SCAN` at
+`HIGH` and with `RF CURVE` at `HIGH`; the barrel constant is zero with either
+`TV/RF` or `RF CURVE` off and scales with both the curve row and the master
+mix; the `curved()` transform is textually identical in both shaders (two
+nearly-equal warps would slide the shadow off its own sprite); and the overlay
+pass runs on every frame with the whole stack active rather than falling back.
+
+## The order of the passes
+
+Three stages, outermost last, and it is physical rather than arbitrary:
+
+```
+the signal   TV/RF      what arrives at the set
+the tube     CRT ···    the glass it is painted onto
+the panel    the light  glare, chroma shimmer and drop shadow — the
+                        reflection off the front of what you are holding
+```
+
+**This mod's light and chroma shimmer are always on top**, over both CRT
+passes and over a first-person 3D view from the voxel mod. That is asserted in
+the test suite by reading the order of the three calls in `GbcLight.present`,
+rather than left to a comment that could drift.
 
 ## Two ways to draw the light
 

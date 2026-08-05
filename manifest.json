@@ -1,7 +1,7 @@
 {
   "id": "DECK_TILT",
   "name": "Deck Tilt",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "api": 2,
   "entry": "main.lua",
   "profile": "content",

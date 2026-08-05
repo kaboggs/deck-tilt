@@ -903,6 +903,259 @@ do
   Settings.rf:sync("off")
 end
 
+-- ------- every declared uniform must actually be used
+--
+-- A GLSL compiler removes a uniform nothing references, and LOVE's send()
+-- then throws on a name the linked program does not have. In these passes
+-- that failure is caught and turns the whole pass off -- so the symptom is
+-- an effect that silently does nothing, which is indistinguishable from the
+-- row being set to OFF. CrtBeam shipped with an unused `time` and was dead on
+-- the GPU while compiling cleanly and passing every other check here.
+--
+-- This is checked by reading the source rather than by running it, because
+-- the harness has no GPU and would not have caught it either.
+do
+  for _, name in ipairs({ "RfTv", "CrtBeam", "Overlay" }) do
+    local mod = V.require(name)
+    local src = mod.SHADER_SRC
+    T.check(type(src) == "string", name .. " exposes its shader source")
+    -- the body is everything after the last extern declaration
+    local lastExtern = 0
+    for s, e in src:gmatch("()extern%s+[%w_]+%s+[%w_]+%s*;()") do
+      lastExtern = e
+    end
+    local body = src:sub(lastExtern)
+    local declared = {}
+    for uniform in src:gmatch("extern%s+[%w_]+%s+([%w_]+)%s*;") do
+      declared[uniform] = true
+      T.check(body:find(uniform, 1, true) ~= nil,
+        ("%s: uniform '%s' is declared and used"):format(name, uniform))
+    end
+
+    -- ...and the other direction, which is the one that actually bit. The
+    -- `time` uniform was deleted from CrtBeam's shader and its send() was
+    -- left behind, so every frame threw on an unknown name and the pass
+    -- turned itself off -- while compiling cleanly, reporting no error, and
+    -- passing the declared-and-used check above. Reading the source is the
+    -- only way to catch it here; the GPU is where it shows up otherwise.
+    -- Scan the module itself AND GbcLight, because a shader's uniforms are
+    -- not always sent from the file that declares them: Overlay owns its
+    -- source but every one of its sends lives in GbcLight.presentOverlay, so
+    -- checking only the owning file leaves exactly that pass unguarded.
+    local files = { MOD_PATH .. "/lib/" .. name .. ".lua" }
+    if name == "Overlay" then
+      files[#files + 1] = MOD_PATH .. "/lib/GbcLight.lua"
+    end
+    for _, path in ipairs(files) do
+      local lua = nil
+      local fh = io.open(path, "r")
+      if fh then lua = fh:read("*a"); fh:close() end
+      T.check(lua ~= nil, path .. " is readable")
+      if lua then
+        for sent in lua:gmatch('send%s*%(%s*"([%w_]+)"') do
+          -- GbcLight also drives the ENGINE's shader (level, time,
+          -- pixelScale), so only judge the names this module owns.
+          if sent:sub(1, 4) == "deck" or declared[sent] then
+            T.check(declared[sent],
+              ("%s: send(\"%s\") has a matching extern"):format(name, sent))
+          end
+        end
+      end
+    end
+  end
+end
+
+-- ------- the electron-beam pass
+do
+  local CrtBeam = V.require("CrtBeam")
+
+  -- Every row OFF by default, and each one independently switchable, which is
+  -- the point of having four rather than one dial.
+  for _, s in ipairs({ Settings.beammask, Settings.beamscan,
+                       Settings.beamglow, Settings.beamedge,
+                       Settings.beamroll }) do
+    T.eq(s:get(), "off", s.label .. " ships OFF")
+    T.eq(s.values[1], "off", "and OFF is the first rung, so LEFT reaches it")
+  end
+  T.check(not CrtBeam.wanted(), "so the pass does not want to draw")
+
+  -- Turning any ONE row on must be enough to make the pass run, and turning
+  -- it back off must be enough to stop it. A pass that only answers to a
+  -- master row would strand the other three.
+  for _, pair in ipairs({
+    { Settings.beammask, "grille" }, { Settings.beamscan, "normal" },
+    { Settings.beamglow, "normal" }, { Settings.beamedge, "normal" },
+    { Settings.beamroll, "60hz" },
+  }) do
+    pair[1]:sync(pair[2])
+    T.check(CrtBeam.wanted(), pair[1].label .. " alone turns the pass on")
+    pair[1]:sync("off")
+    T.check(not CrtBeam.wanted(), "and OFF alone turns it back off")
+  end
+
+  -- Same no-nil contract as RfTv: chained without a branch, so neither may
+  -- ever hand back something a caller cannot draw.
+  local fake = {}
+  T.eq(CrtBeam.apply(fake, 5), fake, "apply hands the canvas back while off")
+  Settings.beammask:sync("shadow")
+  T.eq(CrtBeam.apply(fake, 5), fake,
+    "and still does with no GPU, rather than returning nil")
+  T.eq(CrtBeam.apply(nil, 5), nil, "a nil canvas in is a nil canvas out")
+  Settings.beammask:sync("off")
+
+  -- crt-royale's published defaults. Asserted because they are the difference
+  -- between reproducing a shader people have looked at for a decade and
+  -- reproducing a guess, and nothing else here would notice a drift.
+  local src = CrtBeam.SHADER_SRC
+  for _, want in ipairs({
+    "#define BEAM_MIN_SIGMA 0.02", "#define BEAM_MAX_SIGMA 0.30",
+    "#define BEAM_SPOT_POWER 0.33", "#define BEAM_MIN_SHAPE 2.0",
+    "#define BEAM_MAX_SHAPE 4.0", "#define BEAM_SHAPE_POWER 0.25",
+    "#define DIFFUSION_WEIGHT 0.075",
+  }) do
+    T.check(src:find(want, 1, true) ~= nil, "royale default kept: " .. want)
+  end
+  -- Blur Busters' own two
+  T.check(src:find("#define GAIN_VS_BLUR 0.7", 1, true) ~= nil,
+    "the beam simulator's brightness/blur tradeoff is its own 0.7")
+  T.check(src:find("#define BEAM_GAMMA 2.4", 1, true) ~= nil,
+    "and its gamma is 2.4 -- the arithmetic is done in linear light, which is "
+    .. "what stops the rolling scan banding")
+
+  -- The mask must not be a brightness cut. megatron's whole point is that the
+  -- gun runs harder to pay for it, so the gain has to exceed unity.
+  local gain = tonumber(src:match("#define MASK_GAIN ([%d%.]+)"))
+  T.check(gain and gain > 1.0,
+    ("the mask is paid for by gain (%s), not taken out of the picture"):format(
+      tostring(gain)))
+
+  -- Rung ladders ordered and OFF exactly zero.
+  for _, map in ipairs({ CrtBeam.SCAN, CrtBeam.GLOW, CrtBeam.EDGE,
+                         CrtBeam.ROLL, CrtBeam.MASK }) do
+    T.eq(map.off, 0, "the OFF rung is exactly zero")
+  end
+
+  -- The rolling scan's ratio in particular must be switchable off, and OFF
+  -- must reach the SHADER as a zero rather than merely stopping the row from
+  -- reading well: the shader branches on beamRoll, so a non-zero there with
+  -- the row OFF would keep modulating brightness invisibly.
+  Settings.beamroll:sync("off")
+  T.eq(CrtBeam.rollRatio(), 0,
+    "CRT ROLL OFF derives a zero ratio, so the shader's roll branch is dead")
+  T.eq(CrtBeam.rollStatus(), nil, "and the row shows no reading")
+  Settings.beamroll:sync("60hz")
+  T.check(CrtBeam.rollRatio() >= 0 , "and a tube rung derives a real ratio")
+  Settings.beamroll:sync("off")
+  -- The rungs name TUBE RATES, so they descend: a slower tube buys more blur
+  -- reduction and costs more flicker.
+  T.check(CrtBeam.ROLL["60hz"] > CrtBeam.ROLL["50hz"]
+          and CrtBeam.ROLL["50hz"] > CrtBeam.ROLL["40hz"],
+    "the tube rates descend")
+
+  -- Blur reduction is 1 - 1/N, which must reproduce Blur Busters' own
+  -- published figures or the ratio means something different from what they
+  -- measured. These three are quoted in their README.
+  local function pct(n) return math.floor(CrtBeam.blurReduction(n)*100 + 0.5) end
+  T.eq(pct(2), 50, "120Hz for 60fps content is N=2 and 50%, as published")
+  T.eq(pct(4), 75, "240Hz is N=4 and 75%")
+  T.eq(pct(8), 88, "480Hz is N=8 and 87.5%")
+  T.eq(pct(1), 0, "N=1 is no subframes and therefore no reduction")
+  T.eq(pct(1.5), 33,
+    "and the Deck's 90Hz with a 60Hz tube is N=1.5 and 33% -- real, and not "
+    .. "the nothing an earlier version of this row called it")
+
+  -- The ROLL readout must say nothing while the row is OFF, so it cannot put
+  -- a refresh rate on a row that is doing nothing.
+  T.eq(CrtBeam.rollStatus(), nil, "no readout while CRT ROLL is OFF")
+end
+
+-- ------- the glass: what the curve does to the shadow and the light
+--
+-- Two planes at different depths under one curved sheet is the whole content
+-- of this. Warping BOTH by the same amount was the bug: everything bows, the
+-- shadow never moves relative to its sprite, and it reads exactly as it did
+-- before the curve was applied at all.
+do
+  local Overlay = V.require("Overlay")
+  local src = Overlay.SHADER_SRC
+  local function const(name)
+    return tonumber(src:match("#define " .. name .. " ([%d%.]+)"))
+  end
+
+  local parallax = const("GLASS_PARALLAX")
+  T.check(parallax and parallax > 0,
+    "the shadow's plane is DEEPER than the picture's, or it cannot slide")
+  local bow = const("REFLECT_BOW")
+  T.check(bow and bow > 0 and bow < 1,
+    "the front-surface reflection bows, but by less than the picture behind it")
+  local slideMax = const("GLASS_SLIDE_MAX")
+  T.check(slideMax and slideMax > 0,
+    "the slide is capped as a fraction of the throw")
+  -- The one that matters: the gyro must out-move the glass, or the shadow
+  -- sits at a static curve-driven offset and the tilt is a wobble on top --
+  -- which reads as the shadow not following the gyro at all. Reported from
+  -- hardware after the cap was set to 3.0.
+  T.check(slideMax < 1.0,
+    ("the glass never displaces the shadow further than the gyro does "
+     .. "(cap %s must stay under 1.0 x the throw)"):format(tostring(slideMax)))
+
+  -- The behaviour that matters, checked as arithmetic rather than by eye:
+  -- zero at the centre, growing outwards, then held.
+  local function slide(x, k, throwPx, widthPx)
+    local n = (x - 0.5) * 2
+    local c = 0.5 + n * (1 + k * n * n) * 0.5
+    local g = math.abs(c - x) * widthPx * parallax
+    return math.min(g, throwPx * slideMax)
+  end
+  local K, THROW, W = 0.088, 1.45, 1024      -- RF CURVE HIGH, measured
+  T.eq(slide(0.5, K, THROW, W), 0,
+    "dead centre the glass deflects nothing, so the shadow does not slide")
+  T.check(slide(0.8, K, THROW, W) > slide(0.65, K, THROW, W),
+    "and the slide grows outwards, as the deflection does")
+  T.check(slide(0.95, K, THROW, W) <= THROW * slideMax + 1e-9,
+    "but never past the cap, so the shadow cannot detach from its sprite")
+  T.eq(slide(0.5, 0, THROW, W), 0, "with no curve there is no slide at all")
+
+  -- The curve's main contribution is a SWING, not a slide: rotation composes
+  -- with the gyro instead of competing with it, so it can be large and still
+  -- leave the tilt clearly dominant. Translation could not -- see the note on
+  -- GLASS_SLIDE_MAX.
+  local swing = const("GLASS_SWING")
+  T.check(swing and swing > 0, "the glass swings the shadow's direction")
+  local function lean(x, k)
+    local n = (x - 0.5) * 2
+    local c = 0.5 + n * (1 + k * n * n) * 0.5
+    return math.abs((c - x) * swing)
+  end
+  T.eq(lean(0.5, K), 0, "dead centre you look straight through: no lean")
+  T.check(lean(0.95, K) > lean(0.8, K) and lean(0.8, K) > lean(0.65, K),
+    "and the lean grows towards the edges, as the viewing angle does")
+  T.check(lean(0.95, K) > 0.3,
+    ("the edge lean is worth seeing (%.2f rad at RF CURVE HIGH)"):format(
+      lean(0.95, K)))
+  T.eq(lean(0.95, 0), 0, "with no curve there is no lean at all")
+end
+
+-- ------- the pass chain, and what must stay on top
+--
+-- The user-facing promise is that the light is ALWAYS over the CRT passes.
+-- That is a property of the order of three calls in one function, so read the
+-- function and check the order rather than trusting a comment about it.
+do
+  local src = nil
+  local f = io.open(MOD_PATH .. "/lib/GbcLight.lua", "r")
+  if f then src = f:read("*a"); f:close() end
+  T.check(src ~= nil, "GbcLight.lua is readable")
+  local rf = src:find("RfTv\"%)%.apply")
+  local beam = src:find("CrtBeam\"%)%.apply")
+  local light = src:find("presentOverlay%(canvas")
+  T.check(rf and beam and light, "all three stages are present in present()")
+  T.check(rf < beam, "RF (the signal) runs before the tube")
+  T.check(beam < light,
+    "and both run before the light, which is the reflection off the front of "
+    .. "the panel and must stay on top of everything")
+end
+
 -- ------- the SD-GYRO row must be findable, not merely present
 --
 -- The row was APPENDED for the whole of 0.1.x and 0.2.0, which was correct

@@ -23,13 +23,14 @@ SRC="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 # Keep lib/ COMPLETE.  A module missing from this list installs a mod that
 # loads and then dies at the moment something first needs it -- V.require
 # raises "<name> is missing -- reinstall the mod", which is true and unhelpful,
-# and it happens on the player's machine rather than here.  RfTv.lua was
-# nearly shipped that way.  `tests/deck_tilt_test.lua` now diffs this list
+# and it happens on the player's machine rather than here.  A new module must
+# be added here as well as to lib/.  `tests/deck_tilt_test.lua` diffs this list
 # against the lib directory on every run so it cannot drift again.
 FILES=(
   manifest.json main.lua LICENSE NOTICE.md README.md install.sh
   lib/AxisMap.lua lib/DeckSprite.lua lib/GbcLight.lua lib/GyroMenu.lua
-  lib/HelpScreen.lua lib/Imu.lua lib/Motion.lua lib/Overlay.lua lib/RfTv.lua
+  lib/CrtBeam.lua lib/HelpScreen.lua lib/Imu.lua lib/Motion.lua lib/Overlay.lua
+  lib/RfTv.lua
   lib/Setting.lua lib/Settings.lua
   tests/deck_tilt_test.lua
   docs/axis-map.gif docs/world-light.gif

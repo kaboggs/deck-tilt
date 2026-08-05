@@ -241,7 +241,21 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 pc)
     // rfStrength is the whole pass's dry/wet, so OFF and the rungs below
     // NORMAL cost the same as any other frame in everything except the
     // texture reads -- and mean exactly what they say.
-    vec3 dry = Texel(tex, tc).rgb;
+    //
+    // The dry sample is taken at `uv`, NOT at `tc`. That is the difference
+    // between a mix and a DOUBLE EXPOSURE. `col` was built from samples at
+    // uv = curved(tc); sampling the dry side at tc instead composites an
+    // UNWARPED copy of the picture over the warped one, and at NORMAL that is
+    // a 20% ghost of every sprite, sitting still while the real picture bows
+    // away from it. It was reported as "a ghosted shadow that doesn't move,
+    // and it ghosts the other sprites as well", which is precisely what it is.
+    //
+    // Geometry cannot be dry/wet mixed. Blending a bent and an unbent image
+    // does not give you a less bent one. So the barrel is applied in full
+    // whenever this pass runs at all, RF CURVE alone decides how much of it
+    // there is, and rfStrength mixes only what it can meaningfully mix: the
+    // SIGNAL -- the Y/C split, the dot crawl, the cross colour.
+    vec3 dry = Texel(tex, uv).rgb;
     col = mix(dry, col, clamp(rfStrength, 0.0, 1.0));
     return vec4(col, 1.0) * color;
 }
@@ -268,6 +282,26 @@ end
 -- row, the status line and the frame cannot disagree about it.
 function RfTv.wanted()
   return amount(RfTv.STRENGTH, Settings.rf, "off") > 0
+end
+
+-- The barrel constant the shader is actually bending the picture by, for the
+-- passes that have to agree with it: the CRT edge vignette, which must bow
+-- with the glass rather than darken a flat rectangle, and the drop shadow,
+-- which must lie under the same glass as the sprite casting it.
+--
+-- NOT scaled by the master mix. It used to be, on the theory that rfStrength
+-- partly un-bent the picture -- but that was only true because the dry side
+-- was sampled unwarped, which was the ghosting bug. The dry side is now
+-- sampled through the same warp, so the geometry is full-strength whenever
+-- the pass runs and RF CURVE alone decides how much of it there is. The
+-- followers have to say exactly that or they drift out of step with the glass
+-- they are meant to be under.
+RfTv.BARREL_K1 = 0.055        -- must equal the shader's #define
+function RfTv.barrelK()
+  if amount(RfTv.STRENGTH, Settings.rf, "off") <= 0 then return 0 end
+  local curve = amount(RfTv.CURVE, Settings.rfcurve, "low")
+  if curve <= 0 then return 0 end
+  return RfTv.BARREL_K1 * curve
 end
 
 local shader = nil        -- nil = untried, false = failed

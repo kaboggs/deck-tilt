@@ -215,8 +215,14 @@ local function present(canvas, pixelScale)
   -- Unconditional because RfTv.apply hands back the canvas it was given
   -- whenever the pass is off or anything failed, so there is no branch to get
   -- wrong and stockPresent below receives a drawable canvas either way.
+  -- The chain, outermost last: SIGNAL -> TUBE -> the panel you look at.
+  -- RF is what arrives at the set, CrtBeam is the glass it is painted onto,
+  -- and this mod's own glare, shimmer and drop shadow are the reflection off
+  -- the front -- so they stay on top of both, always. Adding a pass means
+  -- adding a line here and nowhere else.
   local source = canvas
   canvas = V.require("RfTv").apply(canvas, pixelScale) or canvas
+  canvas = V.require("CrtBeam").apply(canvas, pixelScale) or canvas
   local rfDrew = (canvas ~= source)
 
   -- GBC FX off, but the overlay wants the frame: draw the light on our own
@@ -224,7 +230,11 @@ local function present(canvas, pixelScale)
   -- patches the ENGINE's shader and that is not the shader this path uses.
   if (GBCFX.level or 0) <= 0 then
     if GbcLight.overlayWanted() then
-      return GbcLight.presentOverlay(canvas, pixelScale)
+      -- `source` is the frame before RF and CRT touched it. The overlay casts
+      -- its drop shadow from that rather than from the processed picture, so
+      -- the shadow keeps following the GYRO instead of following the
+      -- scanlines. See the shadow block in Overlay.lua.
+      return GbcLight.presentOverlay(canvas, pixelScale, source)
     end
     -- TV/RF on, with no light wanted over it.  We cannot hand this to
     -- stockPresent: the engine's present is written for a level it does not
@@ -318,7 +328,11 @@ end
 -- Our own pass, over whatever the engine composed -- including another mod's
 -- 3D render.  Nothing here reads or writes options.gbcfx, so a mod that pins
 -- that value has nothing to fight: it keeps its zero and we never ask for it.
-function GbcLight.presentOverlay(canvas, pixelScale)
+-- `clean` is the frame as it was before the TV/RF and CRT passes ran, when
+-- either of them did. Optional: called without it (as the tests do, and as an
+-- older caller would) the shadow falls back to reading the frame it is drawing
+-- over, which is exactly right when nothing ran ahead of it.
+function GbcLight.presentOverlay(canvas, pixelScale, clean)
   local Overlay = V.require("Overlay")
   local sh = Overlay.shader()
   if not sh then return stockPresent(canvas, pixelScale) end
@@ -338,6 +352,16 @@ function GbcLight.presentOverlay(canvas, pixelScale)
     sh:send("deckShadowAmt", (mode == "off") and 0 or 1)
     sh:send("deckGlare", GbcLight.glareAmount())
     sh:send("deckShimmer", GbcLight.shimmerAmount())
+    -- Only a DIFFERENT canvas counts as a clean frame. When nothing ran ahead
+    -- of us `clean` is the very canvas being drawn, and sampling that as a
+    -- second texture is both pointless and, on some drivers, a read of the
+    -- active render source -- so the flag stays 0 and the shader reads `tex`.
+    local hasClean = (clean ~= nil and clean ~= canvas)
+    sh:send("deckHasClean", hasClean and 1 or 0)
+    sh:send("deckClean", hasClean and clean or canvas)
+    -- the same barrel the picture is bent by, so the shadow lies under the
+    -- same glass and swings with it instead of sitting flat on top
+    sh:send("deckCurve", hasClean and V.require("RfTv").barrelK() or 0)
   end)
   if not ok then return stockPresent(canvas, pixelScale) end
 
@@ -369,6 +393,8 @@ function GbcLight.install()
       -- select that then does nothing, which is worse than no setting.
       local okRf, Rf = pcall(V.require, "RfTv")
       if okRf and Rf and Rf.wanted() then return true end
+      local okB, Beam = pcall(V.require, "CrtBeam")
+      if okB and Beam and Beam.wanted() then return true end
     end
     return stockActive(...)
   end

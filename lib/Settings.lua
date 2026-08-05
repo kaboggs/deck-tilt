@@ -251,6 +251,80 @@ Settings.rfnoise = Setting.new("rfnoise", "RF NOISE",
   .. "part of the picture. OFF is a clean signal and is the default.",
   "off")
 
+-- ------- the electron-beam pass
+--
+-- Additive with TV/RF and independent of it: RF is the SIGNAL arriving at the
+-- set, this is the TUBE it is painted onto.  Each row is its own cause again,
+-- and every one of them has an OFF, so any combination can be switched off
+-- without touching the others -- including all of them, which is the default.
+Settings.beammask = Setting.new("beammask", "CRT MASK",
+  { "off", "grille", "slot", "shadow" },
+  { "OFF", "GRILLE", "SLOT", "SHADOW" },
+  "The pattern of coloured dots or stripes on the front of a tube. GRILLE is "
+  .. "unbroken vertical stripes. SLOT is stripes broken into short blocks "
+  .. "that step sideways every other row. SHADOW is round dots. The picture "
+  .. "is made brighter first, so the pattern costs light that was added "
+  .. "rather than light you had. OFF removes the pattern.",
+  "off")
+
+Settings.beamscan = Setting.new("beamscan", "CRT BEAM",
+  { "off", "low", "normal", "high" }, { "OFF", "LOW", "NORMAL", "HIGH" },
+  "How much the lines of the tube change width with the picture. A bright "
+  .. "line is wide and nearly touches the line below it. A dark line is thin "
+  .. "with black on both sides. This is different from the RF SCAN row, "
+  .. "which draws lines of one fixed darkness. OFF removes it.",
+  "off")
+
+Settings.beamglow = Setting.new("beamglow", "CRT GLOW",
+  { "off", "low", "normal", "high" }, { "OFF", "LOW", "NORMAL", "HIGH" },
+  "How far light spreads out from a bright area, through the glass and "
+  .. "across the coating behind it. Use some of this with CRT MASK, because "
+  .. "the glow is what stops the pattern looking like dirt on the screen. "
+  .. "OFF removes it.",
+  "off")
+
+Settings.beamedge = Setting.new("beamedge", "CRT EDGE",
+  { "off", "low", "normal", "high" }, { "OFF", "LOW", "NORMAL", "HIGH" },
+  "How much darker the picture gets towards the edges and corners. A tube "
+  .. "does this for two reasons, and this row does both: the corners are dim "
+  .. "because the beam works at an angle there, and the last part of the "
+  .. "edge is dark because the coating stops and the frame of the set "
+  .. "shadows it. NORMAL is the amount measured from real hardware. This is "
+  .. "separate from RF CURVE, which darkens the corners of its own curved "
+  .. "screen. Both can be on. OFF removes it.",
+  "off")
+
+-- Softness is its own row because it is a different question from strength.
+-- CRT EDGE says how DARK the edges get; this says how FAR IN that reaches and
+-- how gradually it arrives. Asking for a gentle wash over the outer third is
+-- not asking for a darker corner, and one dial cannot express both.
+Settings.beamedgesoft = Setting.new("beamedgesoft", "EDGE SOFT",
+  { "tight", "normal", "soft", "softest" },
+  { "TIGHT", "NORMAL", "SOFT", "SOFTEST" },
+  "How gradual the darkening at the edges is. TIGHT keeps it in the corners. "
+  .. "NORMAL is the shape measured from real hardware. SOFT and SOFTEST "
+  .. "spread the same darkness further into the picture, for a gentle wash "
+  .. "rather than a dark corner. This row does nothing while CRT EDGE is OFF.",
+  "normal")
+
+-- The one row here whose usefulness is a property of the DISPLAY rather than
+-- of the picture, which is why its value carries a measured readout.
+-- The rung names the TUBE, not the ratio.  The ratio that is any good depends
+-- on the display, so a ladder of ratios is correct on one machine and wrong
+-- everywhere else; the tube is the thing a player can actually have an
+-- opinion about, and the ratio is then measured arithmetic.  See CrtBeam.
+Settings.beamroll = Setting.new("beamroll", "CRT ROLL",
+  { "off", "60hz", "50hz", "40hz" }, { "OFF", "60HZ", "50HZ", "40HZ" },
+  "Lights each line for a moment instead of for the whole frame, the way a "
+  .. "tube does. This makes movement clearer. Choose the speed of the tube. "
+  .. "60HZ is the speed of a real one and is the right choice on this "
+  .. "console. A lower speed makes movement clearer still, but it can "
+  .. "flicker. The number next to this row is how much less blurred movement "
+  .. "is, measured on your screen right now. It needs your screen to refresh "
+  .. "faster than the tube: this console refreshes 90 times a second, so a "
+  .. "60HZ tube gives 33 per cent. A faster screen gives more.",
+  "off")
+
 Settings.order = { Settings.motion,
                    Settings.srcx, Settings.signx,
                    Settings.srcy, Settings.signy,
@@ -259,6 +333,9 @@ Settings.order = { Settings.motion,
   Settings.overlay, Settings.shimmer, Settings.glare,
   Settings.rf, Settings.rfdots, Settings.rfcolour, Settings.rfscan,
   Settings.rfcurve, Settings.rfnoise,
+  Settings.beammask, Settings.beamscan, Settings.beamglow, Settings.beamedge,
+  Settings.beamedgesoft,
+  Settings.beamroll,
   Settings.hotkey }
 
 function Settings.schema()
