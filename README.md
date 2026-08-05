@@ -27,7 +27,7 @@ Give these when you report a problem. The mod reads its own version from
 
 | Part | Name | Tested |
 |---|---|---|
-| This mod | Deck Tilt (`DECK_TILT`) | **0.3.0** |
+| This mod | Deck Tilt (`DECK_TILT`) | **0.4.0** |
 | Host engine | `gen1recomp` | `main`, after tag **`v0.1.69`** |
 | 3D mod (optional) | DramaticShape Voxel Mod (`DRAMATIC_SHAPE`) | **1.6.0** |
 | Runtime | LOVE | **11.5** |
@@ -42,7 +42,8 @@ that engine's real shader source.
 
 | Deck Tilt | Engine | 3D mod | Result |
 |---|---|---|---|
-| 0.3.0 | `main` after `v0.1.69` | 1.6.0 | ok — current |
+| 0.4.0 | `main` after `v0.1.69` | 1.6.0 | ok — current |
+| 0.3.0 | `main` after `v0.1.69` | 1.6.0 | ok |
 | 0.2.0 | `main` after `v0.1.65` | 1.5.5 | ok |
 | 0.2.0 | `main` after `v0.1.47` | 1.3.1 | ok |
 | 0.1.x | `main` after `v0.1.47` | 1.2.1 | ok, and the last pairing where `GBC FX` is left alone — see below |
@@ -280,6 +281,12 @@ Push **B** to go back to the rows.
 | `3D LIGHT` | AUTO / ON / OFF | AUTO |
 | `COLOUR` | OFF / SUBTLE / NORMAL / FULL / MAX | MAX |
 | `GLARE` | OFF / LOW / NORMAL / HIGH / MAX | HIGH |
+| `TV/RF` | OFF / SOFT / NORMAL / HARSH | **OFF** |
+| `RF DOTS` | OFF / LOW / NORMAL / HIGH | NORMAL |
+| `RF COLOUR` | OFF / LOW / NORMAL / HIGH | NORMAL |
+| `RF SCAN` | OFF / LOW / NORMAL / HIGH | NORMAL |
+| `RF CURVE` | OFF / LOW / NORMAL / HIGH | LOW |
+| `RF NOISE` | OFF / LOW / NORMAL / HIGH | OFF |
 | `QUICK CENTRE` | ON / OFF | ON |
 | `RECENTRE` | action | — |
 | `RESET ALL` | action | — |
@@ -489,6 +496,100 @@ loads, that the shader change applies, and that the `SD-GYRO` page opens.
 The author tilted the console by hand with one title only. The other two use
 the same engine, the same shader and the same sensor, so the movement is
 expected to be the same. The author did not confirm this by hand.
+
+## The TV/RF pass
+
+**Off by default.** Set `TV/RF` to anything but `OFF` to draw the picture as
+if it had travelled through a composite video signal into a CRT: moving dots
+where colours meet, colour that runs sideways past a hard edge, scan lines, a
+curved screen, and optional snow.
+
+### It reproduces the cause, not the look
+
+A CRT shader written from screenshots draws the artefacts. This one does not
+draw any of them. It **encodes the frame into a composite signal and decodes
+it back**, and the artefacts fall out of that on their own:
+
+- **Dot crawl** is the subcarrier the luma filter failed to reject, moving
+  because NTSC flips the burst 180° every line and every field.
+- **Cross-colour** is picture detail sitting near 3.58 MHz being demodulated
+  as if it were colour.
+- **Colour smear** is the chroma filter being wider than the luma one, so
+  colour runs past an edge the edge itself keeps sharp.
+
+Nothing in the shader special-cases any of those. Search it for "rainbow" and
+there is nothing to find.
+
+### Where it comes from
+
+`github.com/GOROman/famicom-rf-hackrf-decoder` (MIT, © GOROman) — a software
+NTSC decoder that receives a real Famicom's RF output with an SDR. Its DSP
+chain and its constants are the reference, and they are measured against
+hardware rather than guessed:
+
+| Taken | Value |
+|---|---|
+| Colour subcarrier | `315e6/88` = 3.579545 MHz |
+| Active line | 52.6 µs |
+| Y/C split | `y = composite − chroma_bandpass` |
+| Chroma demod | `2·c·sin θ`, `2·c·cos θ`, then a wider low-pass |
+| YUV→RGB | `1.140`, `−0.395`, `−0.581`, `2.032` |
+| Barrel distortion | `k1 = 0.055` |
+| Scan lines | odd rows × `0.72` |
+| Vignette | `1 − 0.18·r⁴` |
+
+Nothing links against it and nothing is copied from it. It is a reference.
+
+**One number had to be constructed rather than copied.** The decoder knows how
+many samples it has per subcarrier cycle because it decodes a real signal. A
+160×144 Game Boy frame is not a signal and has no line structure, so:
+
+```
+52.6 µs × 3.579545 MHz = 188.28 colour cycles per line
+188.28 / 160 GB pixels  = 1.1768 cycles per GB pixel
+```
+
+Every artefact's *scale* follows from that. Larger makes the dots finer;
+smaller coarsens them into stripes. It is a derivation, not a measurement, and
+this mod's history says that is exactly the kind of number to distrust — the
+gyro scale was confidently 4.9× wrong with the wrong sign for a while. It is
+the first thing to change if this ever looks wrong. The test suite checks it
+against the two reference constants it comes from, so it cannot be quietly
+retuned to taste.
+
+**One deliberate departure.** The reference darkens every odd row of a 480-row
+frame as a lookup table at native resolution. At 5 screen pixels per GB pixel
+a hard odd/even rule lands on 2.5 px and aliases into moiré, so the same rate
+and the same `0.72` floor are drawn as a smooth profile instead.
+
+### It draws UNDER the light
+
+The order is physical, not arbitrary: the RF artefacts are in the **signal**,
+the panel displays that signal, and the glare is a reflection off the **front
+of the panel** you are looking at. So the TV/RF pass runs first into its own
+buffer, and this mod's glare, shimmer and drop shadow are drawn over the
+result — including over a first-person 3D view from the voxel mod.
+
+It also composites over whatever the engine handed us, so it works with GBC FX
+on, with GBC FX pinned off by the voxel mod, and with the motion sensor
+switched off entirely. `TV/RF` is independent of `MOTION`: it is a picture
+effect and has nothing to do with the gyro.
+
+### Cost
+
+Measured on the Deck at 1024×722, 180 frames per condition:
+
+| | ms/frame |
+|---|---|
+| `TV/RF` OFF | 11.30 |
+| `TV/RF` NORMAL | 11.11 |
+| `TV/RF` HARSH | 11.18 |
+| `TV/RF` OFF (control) | 11.11 |
+
+No measurable cost. Read that precisely: 11.1 ms is ~90 fps, which is the
+frame cap doing the limiting — so this says the pass **adds no dropped frames**
+at that resolution, not that it is free. It has not been measured uncapped, or
+at 1280×800.
 
 ## Two ways to draw the light
 

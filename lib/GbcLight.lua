@@ -204,12 +204,37 @@ end
 -- not driving -- so with MOTION off, GBC FX off, or no IMU, what gets drawn
 -- is the engine's own output, not an imitation of it.
 local function present(canvas, pixelScale)
+  -- ---- the TV/RF pass goes UNDER everything below ----
+  --
+  -- Physical order, and it is the reason this line is first rather than last:
+  -- the RF artefacts are in the SIGNAL, the panel displays that signal, and
+  -- the glare is a reflection off the front of the panel. So RF runs into its
+  -- own buffer here and every path below -- ours and the engine's own -- then
+  -- draws over the result.
+  --
+  -- Unconditional because RfTv.apply hands back the canvas it was given
+  -- whenever the pass is off or anything failed, so there is no branch to get
+  -- wrong and stockPresent below receives a drawable canvas either way.
+  local source = canvas
+  canvas = V.require("RfTv").apply(canvas, pixelScale) or canvas
+  local rfDrew = (canvas ~= source)
+
   -- GBC FX off, but the overlay wants the frame: draw the light on our own
   -- pass instead of handing back.  Checked BEFORE build(), because build()
   -- patches the ENGINE's shader and that is not the shader this path uses.
   if (GBCFX.level or 0) <= 0 then
     if GbcLight.overlayWanted() then
       return GbcLight.presentOverlay(canvas, pixelScale)
+    end
+    -- TV/RF on, with no light wanted over it.  We cannot hand this to
+    -- stockPresent: the engine's present is written for a level it does not
+    -- have here, and active() is only answering true because WE asked it to
+    -- for this pass.  So draw the buffer plainly -- the RF pass has already
+    -- done all the work, and this is just getting it to the screen.
+    if rfDrew then
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(canvas, 0, 0)
+      return
     end
     return stockPresent(canvas, pixelScale)
   end
@@ -336,7 +361,15 @@ function GbcLight.install()
   -- gates is never reached.  Stock answer otherwise, untouched.
   local stockActive = GBCFX.active
   GBCFX.active = function(...)
-    if GbcLight.overlayWanted() and (GBCFX.level or 0) <= 0 then return true end
+    if (GBCFX.level or 0) <= 0 then
+      if GbcLight.overlayWanted() then return true end
+      -- ...and the same for TV/RF, which is a whole pass of its own and has
+      -- nothing to do with the light or the sensor.  Without this the row
+      -- would set a value that never reached a frame -- a setting you can
+      -- select that then does nothing, which is worse than no setting.
+      local okRf, Rf = pcall(V.require, "RfTv")
+      if okRf and Rf and Rf.wanted() then return true end
+    end
     return stockActive(...)
   end
 end

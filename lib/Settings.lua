@@ -190,12 +190,76 @@ Settings.hotkey = Setting.new("hotkey", "QUICK CENTRE",
   .. "Steam controller settings. The game does not use the rear buttons.",
   "on")
 
+-- ------- the TV/RF pass
+--
+-- Six rows for one optional effect is a lot on a page this mod deliberately
+-- shrank to one menu row.  They are here rather than folded into a single
+-- dial because the artefacts are independent CAUSES, not strengths of one
+-- thing: dot crawl is a bad Y/C split, cross-colour is chroma bandwidth,
+-- scanlines and curvature are the tube, and snow is the aerial.  A player who
+-- wants a soft CRT but no snow, or colour bleed but a flat screen, is asking
+-- for a different combination rather than a smaller number -- and one dial
+-- cannot answer that.
+--
+-- OFF is the default on the master row, so nothing below it runs and nothing
+-- anyone already has changes.  Every row is a no-op while TV/RF is OFF.
+Settings.rf = Setting.new("rf", "TV/RF",
+  { "off", "soft", "normal", "harsh" },
+  { "OFF", "SOFT", "NORMAL", "HARSH" },
+  "Draws the picture as if it came through an aerial into an old TV. This "
+  .. "adds moving dots, colour that spreads past an edge, scan lines and a "
+  .. "curved screen. OFF removes all of it and the rows below do nothing. "
+  .. "SOFT mixes a little of it with the plain picture. NORMAL is most of "
+  .. "it. HARSH is all of it. The light of this mod is drawn on top of this "
+  .. "effect, not under it.",
+  "off")
+
+Settings.rfdots = Setting.new("rfdots", "RF DOTS",
+  { "off", "low", "normal", "high" }, { "OFF", "LOW", "NORMAL", "HIGH" },
+  "How many moving dots appear where colour meets colour. A TV separates "
+  .. "the brightness from the colour, and the part it fails to separate "
+  .. "becomes these dots. They move because the signal changes each field. "
+  .. "HIGH is a worse TV. OFF is a perfect separation, which no real TV has.",
+  "normal")
+
+Settings.rfcolour = Setting.new("rfcolour", "RF COLOUR",
+  { "off", "low", "normal", "high" }, { "OFF", "LOW", "NORMAL", "HIGH" },
+  "How far colour spreads sideways, and how much false colour appears on "
+  .. "fine detail. A TV carries colour with less detail than brightness, so "
+  .. "colour runs past an edge while the edge stays sharp. OFF gives a black "
+  .. "and white picture.",
+  "normal")
+
+Settings.rfscan = Setting.new("rfscan", "RF SCAN",
+  { "off", "low", "normal", "high" }, { "OFF", "LOW", "NORMAL", "HIGH" },
+  "How dark the horizontal lines of the tube are. A tube draws the picture "
+  .. "in lines with a gap between them. NORMAL is the darkness measured from "
+  .. "real hardware. OFF removes the lines.",
+  "normal")
+
+Settings.rfcurve = Setting.new("rfcurve", "RF CURVE",
+  { "off", "low", "normal", "high" }, { "OFF", "LOW", "NORMAL", "HIGH" },
+  "How much the screen bulges, and how dark the corners are. The glass of a "
+  .. "tube is curved. LOW is the default because a strong curve moves the "
+  .. "text of the game away from where you expect it. OFF gives a flat "
+  .. "screen and even corners.",
+  "low")
+
+Settings.rfnoise = Setting.new("rfnoise", "RF NOISE",
+  { "off", "low", "normal", "high" }, { "OFF", "LOW", "NORMAL", "HIGH" },
+  "How much snow the aerial picks up. This is the only row here that is not "
+  .. "part of the picture. OFF is a clean signal and is the default.",
+  "off")
+
 Settings.order = { Settings.motion,
                    Settings.srcx, Settings.signx,
                    Settings.srcy, Settings.signy,
                    Settings.xrange, Settings.yrange,
                    Settings.smooth, Settings.level, Settings.shadow,
-  Settings.overlay, Settings.shimmer, Settings.glare, Settings.hotkey }
+  Settings.overlay, Settings.shimmer, Settings.glare,
+  Settings.rf, Settings.rfdots, Settings.rfcolour, Settings.rfscan,
+  Settings.rfcurve, Settings.rfnoise,
+  Settings.hotkey }
 
 function Settings.schema()
   local out = {}

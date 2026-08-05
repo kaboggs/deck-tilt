@@ -160,7 +160,24 @@ local schema = Settings.schema()
 local function schemaFor(key)
   for _, row in ipairs(schema) do if row.key == key then return row end end
 end
-T.eq(#schema, 14, "fourteen settings are defined")
+-- A LITERAL count here is the third instance of the same stale-constant trap
+-- this file has now had (see the version assertion above, and main.lua's note
+-- about it): it fails on every honest addition and tells you nothing about
+-- whether the schema is right. What is worth asserting is that the schema and
+-- the order agree -- that a setting cannot be added to one and forgotten in
+-- the other, which is the failure that actually loses a row from a menu.
+T.eq(#schema, #Settings.order,
+  "the schema has exactly one entry per ordered setting")
+do
+  local seen = {}
+  for _, row in ipairs(schema) do
+    T.check(not seen[row.key], "no setting is defined twice: " .. tostring(row.key))
+    seen[row.key] = true
+  end
+  for _, s in ipairs(Settings.order) do
+    T.check(seen[s.key], "every ordered setting reaches the schema: " .. s.key)
+  end
+end
 T.eq(schema[1].key, "motion", "MOTION leads")
 -- assert the SCHEMA default, not the live value: the live one resolves
 -- through mod.options against whatever the player last saved, so asserting
@@ -771,6 +788,120 @@ T.check(dx >= Motion.FRAME.xMin and dx <= Motion.FRAME.xMax
         and dy >= Motion.FRAME.yMin and dy <= Motion.FRAME.yMax,
   ("and keeps it inside the frame (%.2f, %.2f)"):format(dx or -9, dy or -9))
 Settings.motion:sync("tilt")
+
+-- ------- install.sh must ship every module
+--
+-- A lib/ module missing from install.sh's FILES list produces an install that
+-- LOADS and then dies the moment something first needs it, with V.require
+-- raising "<name> is missing -- reinstall the mod" on the player's machine
+-- rather than here. RfTv.lua was nearly shipped exactly that way -- the list
+-- is hand-maintained and adding a module does not remind you to touch it.
+--
+-- Read from disk rather than from a second list in this file, because a
+-- second list is the same bug one level up.
+do
+  local dir = MOD_PATH .. "/lib"
+  local listed = {}
+  local sh = io.open(MOD_PATH .. "/install.sh", "r")
+  if sh then
+    local body = sh:read("*a"); sh:close()
+    for name in body:gmatch("lib/([%w_]+%.lua)") do listed[name] = true end
+  end
+  -- popen rather than lfs: this harness has no filesystem library, and the
+  -- suite already runs from a shell that has ls.
+  local pipe = io.popen("ls " .. dir .. " 2>/dev/null")
+  local found = 0
+  if pipe then
+    for name in pipe:lines() do
+      if name:match("%.lua$") then
+        found = found + 1
+        T.check(listed[name], "install.sh ships lib/" .. name)
+      end
+    end
+    pipe:close()
+  end
+  T.check(found > 0, "the lib directory was actually read")
+end
+
+-- ------- the TV/RF pass
+--
+-- Like the rest of this mod the shader itself cannot run here -- no GPU, no
+-- canvas. What CAN be checked is the contract that keeps it from breaking a
+-- frame, and the arithmetic that decides what the artefacts look like, which
+-- is the part a reader has to take on trust otherwise.
+do
+  local RfTv = V.require("RfTv")
+
+  -- OFF by default: this must not change what anyone already has.
+  T.eq(Settings.rf:get(), "off", "TV/RF ships OFF")
+  T.check(not RfTv.wanted(), "so the pass does not want to draw")
+
+  -- apply() must hand back something drawable on EVERY path. In this harness
+  -- there is no love.graphics at all, which is the harshest version of the
+  -- failure it has to survive: the contract is that a caller can write
+  -- `canvas = RfTv.apply(canvas, ps)` unconditionally and never get nil.
+  local fake = {}
+  T.eq(RfTv.apply(fake, 5), fake,
+    "apply hands the canvas straight back while the pass is off")
+  Settings.rf:sync("normal")
+  T.check(RfTv.wanted(), "TV/RF NORMAL wants to draw")
+  T.eq(RfTv.apply(fake, 5), fake,
+    "and still hands the original back when there is no GPU to draw with, "
+    .. "rather than returning nil and taking the frame with it")
+  T.eq(RfTv.apply(nil, 5), nil, "a nil canvas in is a nil canvas out")
+
+  -- The rungs have to be ordered and bounded, or a row can select a value
+  -- that is stronger than the one above it.
+  for _, pair in ipairs({
+    { RfTv.STRENGTH, { "off", "soft", "normal", "harsh" } },
+    { RfTv.DOTS,     { "off", "low", "normal", "high" } },
+    { RfTv.COLOUR,   { "off", "low", "normal", "high" } },
+    { RfTv.CURVE,    { "off", "low", "normal", "high" } },
+    { RfTv.NOISE,    { "off", "low", "normal", "high" } },
+  }) do
+    local map, order = pair[1], pair[2]
+    T.eq(map[order[1]], 0, "the OFF rung is exactly zero, not merely small")
+    for i = 2, #order do
+      T.check(map[order[i]] >= map[order[i - 1]],
+        ("%s is at least %s"):format(order[i], order[i - 1]))
+    end
+  end
+  T.check(RfTv.STRENGTH.harsh <= 1.0,
+    "the master mix never exceeds a full wet signal")
+
+  -- The one derived constant, checked against the two reference constants it
+  -- comes from rather than against itself. If someone edits CYCLES_PER_PX to
+  -- taste, this says so -- it is the number every artefact's scale hangs off,
+  -- and a silent edit to it is the difference between dots and stripes.
+  local kFsc = 315e6 / 88.0            -- ntsc_decoder.hpp
+  local activeLine = 52.6e-6           -- ntsc_decoder.cpp full_span
+  local expect = kFsc * activeLine / 160.0
+  local got = tonumber(RfTv.SHADER_SRC:match("#define CYCLES_PER_PX ([%d%.]+)"))
+  T.check(got ~= nil, "the shader states its cycles-per-pixel as a constant")
+  T.check(math.abs(got - expect) < 0.001,
+    ("CYCLES_PER_PX %.4f is 52.6us x 3.579545MHz / 160 = %.4f"):format(
+      got or -1, expect))
+
+  -- Constants lifted verbatim from the reference's CRT pass. Asserted because
+  -- they are the difference between reproducing measured hardware and
+  -- reproducing someone's taste, and nothing else would notice a drift.
+  T.check(RfTv.SHADER_SRC:find("#define BARREL_K1 0.055", 1, true) ~= nil,
+    "barrel k1 is the reference's 0.055")
+  T.check(RfTv.SHADER_SRC:find("#define SCAN_FLOOR 0.72", 1, true) ~= nil,
+    "the scanline floor is the reference's 0.72")
+  T.check(RfTv.SHADER_SRC:find("#define VIGNETTE 0.18", 1, true) ~= nil,
+    "the vignette coefficient is the reference's 0.18")
+
+  -- The decode matrix must be the inverse of the encode one, or the pass
+  -- changes the colour of a frame it is supposed to leave alone at OFF.
+  T.check(RfTv.SHADER_SRC:find("1.140", 1, true)
+          and RfTv.SHADER_SRC:find("2.032", 1, true)
+          and RfTv.SHADER_SRC:find("0.395", 1, true)
+          and RfTv.SHADER_SRC:find("0.581", 1, true),
+    "YUV->RGB uses the reference's own coefficients")
+
+  Settings.rf:sync("off")
+end
 
 -- ------- the SD-GYRO row must be findable, not merely present
 --
