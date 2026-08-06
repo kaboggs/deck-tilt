@@ -375,10 +375,117 @@ function GbcLight.presentOverlay(canvas, pixelScale, clean)
   GbcLight.lightX, GbcLight.lightY = lx, ly
 end
 
+-- ------- the colour swatches, and why they are drawn from HERE
+--
+-- GLOW COLOUR is the one row on this mod's page that cannot be drawn by the
+-- page. The SD-GYRO menu draws into the engine's 160x144 Game Boy
+-- framebuffer, and that frame then goes through PaletteFX, which remaps the
+-- four DMG SHADES to a palette. Anything drawn with the rest of the page is
+-- therefore a shade and not a colour -- a swatch strip drawn there would
+-- arrive as four greys, which is worse than no swatches at all, because it
+-- would look like the colours were broken rather than absent.
+--
+-- So the strip is drawn where this mod's own light is drawn: after present,
+-- over the finished picture, in real RGB. It is still in the canvas's
+-- 160x144 coordinates, because the engine's transform is still current at
+-- this point -- so it lands exactly beside its row and scales with the
+-- window without knowing anything about either.
+--
+-- GyroMenu publishes the request on CrtBeam (a module both sides already
+-- hold) rather than being required from here, which would be a cycle. It is
+-- cleared as it is consumed, so the strip cannot outlive the page that asked
+-- for it by even one frame.
+-- Sizes are in GAME BOY pixels -- 160x144 -- and scaled up on the way out.
+-- The strip sits right of the value text, which at eight pixels a glyph runs
+-- to about x=72 for the longest label here.
+local SWATCH_W, SWATCH_H, SWATCH_X = 7, 6, 88
+local GB_W, GB_H = 160, 144
+
+-- Drawn INTO the canvas on its way in, not over the finished frame.
+--
+-- Over the top was the obvious place and it was wrong twice. The canvas that
+-- reaches present is already the size of the WINDOW, not 160x144, so drawing
+-- in menu coordinates put the strip in the corner of the screen at a
+-- seventh of its intended size. And even scaled correctly it would sit flat
+-- on a picture that the RF pass then bows away underneath it, so the strip
+-- would drift off its own row towards the edges of the glass.
+--
+-- Going in early fixes both at once and costs nothing: the swatches become
+-- part of the picture, so the curve, the mask and the scanlines all happen
+-- TO them. They bend with their row because they are on the same glass,
+-- which is also just what a strip of colours on a menu would look like on a
+-- television.
+local function drawSwatches(canvas, pixelScale)
+  local okB, CrtBeam = pcall(V.require, "CrtBeam")
+  if not okB or not CrtBeam then return end
+  local req = CrtBeam.swatchStrip
+  CrtBeam.swatchStrip = nil
+  if not req or not req.values or not canvas then return end
+
+  local ok, w, h = pcall(canvas.getDimensions, canvas)
+  if not ok or not w then return end
+  local ps = math.max(1, math.floor(tonumber(pixelScale) or 1))
+  -- The game's picture is centred in the canvas with the letterbox either
+  -- side, so the offset is derived from the two rather than assumed to be
+  -- zero. Derived, because it changes with the window and this must not need
+  -- editing when it does.
+  local offX = (w - GB_W * ps) * 0.5
+  local offY = (h - GB_H * ps) * 0.5
+
+  -- the value line of the row's box, in OptionRows' own geometry: four boxes
+  -- of four 8px tiles, label on the second tile, value on the third
+  local y = ((req.slot - 1) * 4 + 2) * 8
+  local g = love.graphics
+  local prev = g.getCanvas()
+  local okDraw = pcall(function()
+    g.setCanvas(canvas)
+    for i, name in ipairs(req.values) do
+      local x = SWATCH_X + (i - 1) * (SWATCH_W + 1)
+      -- a black frame, because WHITE against the menu's light background is
+      -- otherwise an invisible swatch in the middle of the strip
+      g.setColor(0, 0, 0, 1)
+      g.rectangle("fill", offX + (x - 1) * ps, offY + (y - 1) * ps,
+                  (SWATCH_W + 2) * ps, (SWATCH_H + 2) * ps)
+      local c = CrtBeam.GLOWCOL[name] or { 1, 1, 1 }
+      -- Scaled so the brightest channel is full, NOT normalised by luma the
+      -- way the shader does it. The shader is answering "how much light does
+      -- this add", which must not change with hue; a swatch is answering
+      -- "which colour is this", which wants the most saturated honest
+      -- version of it. Same numbers, two different questions.
+      local m = math.max(c[1], c[2], c[3], 1e-3)
+      g.setColor(c[1] / m, c[2] / m, c[3] / m, 1)
+      g.rectangle("fill", offX + x * ps, offY + y * ps,
+                  SWATCH_W * ps, SWATCH_H * ps)
+      if i == req.index then
+        g.setColor(0, 0, 0, 1)
+        g.rectangle("fill", offX + (x - 1) * ps,
+                    offY + (y + SWATCH_H + 2) * ps,
+                    (SWATCH_W + 2) * ps, 2 * ps)
+      end
+    end
+  end)
+  g.setColor(1, 1, 1, 1)
+  pcall(g.setCanvas, prev)
+  if not okDraw then CrtBeam.swatchStrip = nil end
+end
+
 function GbcLight.install()
   if installed then return end
   installed = true
-  GBCFX.present = present
+  -- Wrapped rather than assigned straight through, so the swatch strip is
+  -- drawn on EVERY path through present -- stock, overlay, patched shader
+  -- and all the failure returns. A strip that only appeared when the light
+  -- happened to be running would be a row that shows its colours on some
+  -- settings and not others.
+  --
+  -- BEFORE present, not after: the strip has to be in the picture before the
+  -- RF and CRT passes read it, or it is a flat sticker on a curved screen.
+  -- Renderer ignores present's return value (Renderer.lua calls it as a
+  -- statement), so nothing is lost by not passing one back.
+  GBCFX.present = function(canvas, pixelScale)
+    pcall(drawSwatches, canvas, pixelScale)
+    present(canvas, pixelScale)
+  end
   -- The engine only calls present() when GBCFX.active() is true, and that is
   -- false at level 0 -- which is exactly the condition the overlay exists
   -- for.  So active() has to answer for the overlay as well, or the pass it

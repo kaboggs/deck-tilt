@@ -27,7 +27,7 @@ Give these when you report a problem. The mod reads its own version from
 
 | Part | Name | Tested |
 |---|---|---|
-| This mod | Deck Tilt (`DECK_TILT`) | **0.5.0** |
+| This mod | Deck Tilt (`DECK_TILT`) | **0.6.0** |
 | Host engine | `gen1recomp` | `main`, after tag **`v0.1.69`** |
 | 3D mod (optional) | DramaticShape Voxel Mod (`DRAMATIC_SHAPE`) | **1.6.0** |
 | Runtime | LOVE | **11.5** |
@@ -42,7 +42,8 @@ that engine's real shader source.
 
 | Deck Tilt | Engine | 3D mod | Result |
 |---|---|---|---|
-| 0.5.0 | `main` after `v0.1.69` | 1.6.0 | ok — current |
+| 0.6.0 | `main` after `v0.1.69` | 1.6.0 | ok — current |
+| 0.5.0 | `main` after `v0.1.69` | 1.6.0 | ok |
 | 0.4.0 | `main` after `v0.1.69` | 1.6.0 | ok |
 | 0.3.0 | `main` after `v0.1.69` | 1.6.0 | ok |
 | 0.2.0 | `main` after `v0.1.65` | 1.5.5 | ok |
@@ -270,10 +271,15 @@ on the title screen, and the one inside the game at `START` → `OPTION`. It is
 the same menu and the same row; there is nothing to open in a particular
 place.
 
-`SD-GYRO` sits in the display group, directly under `GBC FX` — the light this
-mod moves. Where `GBC FX` is not on the menu, it sits under `TILT`, and where
-neither is, under `COLORS`. The DramaticShape voxel mod removes both `GBC FX`
-and `TILT` while it is installed, so with that mod the row follows `COLORS`.
+`SD-GYRO` is the **first row** on the menu, with a small tilting console
+beside it. It went there from 0.6.0: it is the front door to every setting
+this mod has, and it carries the `SENSOR` reading as its value — which is the
+one thing on the whole menu you need when nothing is happening. `ASLEEP`
+there tells you the gyro is off in Steam Input, and that is a fix outside the
+game entirely.
+
+The icon is the same console the `AXIS MAP` page draws, at a smaller scale.
+There is one drawing of it in this mod.
 
 ![The SD-GYRO page](docs/sd-gyro-menu.png)
 
@@ -303,16 +309,23 @@ Push **B** to go back to the rows.
 | `GLARE` | OFF / LOW / NORMAL / HIGH / MAX | HIGH |
 | `TV/RF` | OFF / SOFT / NORMAL / HARSH | **OFF** |
 | `RF DOTS` | OFF / LOW / NORMAL / HIGH | NORMAL |
-| `RF COLOUR` | OFF / LOW / NORMAL / HIGH | NORMAL |
+| `RF COLOUR` | OFF / FAINT / LOW / NORMAL / HIGH / MAX | NORMAL |
+| `RF CHROMA` | STUDIO / TIGHT / NORMAL / WIDE / PORTABLE | NORMAL |
+| `RF TINT` | OFF / GREEN / GREEN+ / RED / RED+ | OFF |
 | `RF SCAN` | OFF / LOW / NORMAL / HIGH | NORMAL |
 | `RF CURVE` | OFF / LOW / NORMAL / HIGH | LOW |
 | `RF NOISE` | OFF / LOW / NORMAL / HIGH | OFF |
-| `CRT MASK` | OFF / GRILLE / SLOT / SHADOW | **OFF** |
+| `CRT MONO` | OFF / ON | **OFF** |
+| `CRT COLOUR` | 0% to 200%, in 25s | 100% |
+| `CRT CONTRAST` | 50% to 150%, in 10s | 100% |
+| `CRT MASK` | OFF / GRILLE / SLOT / SHADOW / PVM / TRINITRON / DOT | **OFF** |
+| `CRT PITCH` | FINE / NORMAL / WIDE / WIDEST | NORMAL |
 | `CRT BEAM` | OFF / LOW / NORMAL / HIGH | **OFF** |
 | `CRT GLOW` | OFF / LOW / NORMAL / HIGH | **OFF** |
+| `GLOW COLOUR` | WHITE / 9300K / 7500K / 5500K / AMBER / GREEN / BLUE | WHITE |
 | `CRT EDGE` | OFF / LOW / NORMAL / HIGH | **OFF** |
 | `EDGE SOFT` | TIGHT / NORMAL / SOFT / SOFTEST | NORMAL |
-| `CRT ROLL` | OFF / 60HZ / 50HZ / 40HZ | **OFF** |
+| `CRT ROLL` | OFF, then 15HZ to 60HZ in 5s and 70HZ to 120HZ in 10s | **OFF** |
 | `QUICK CENTRE` | ON / OFF | ON |
 | `RECENTRE` | action | — |
 | `RESET ALL` | action | — |
@@ -548,10 +561,9 @@ there is nothing to find.
 
 ### Where it comes from
 
-`github.com/GOROman/famicom-rf-hackrf-decoder` (MIT, © GOROman) — a software
-NTSC decoder that receives a real Famicom's RF output with an SDR. Its DSP
-chain and its constants are the reference, and they are measured against
-hardware rather than guessed:
+The reference is a software NTSC decoder that receives a real Famicom's RF
+output with an SDR ([Credits](#credits)). Its DSP chain and its constants are
+measured against hardware rather than guessed:
 
 | Taken | Value |
 |---|---|
@@ -625,17 +637,11 @@ arriving at the set, this models the **tube** the signal is painted onto. A
 real television does both; either is useful alone. Every row has its own
 `OFF`, so any of them can be switched off without touching the others.
 
-### Where each piece comes from
+![`CRT MASK` set to `TRINITRON` at `WIDE` pitch: the stripes of an aperture grille, and the shadow of the two damper wires across the picture](docs/crt-mask-trinitron.png)
 
-| Row | Reference | What is taken |
-|---|---|---|
-| `CRT BEAM` | [crt-royale](https://github.com/libretro/slang-shaders/tree/master/crt/shaders/crt-royale) © TroggleMonkey, GPLv2+ | the beam model |
-| `CRT MASK` | [crt-sony-megatron](https://github.com/libretro/slang-shaders/blob/master/hdr/shaders/crt-sony-megatron.slangp) © Major Pain The Cactus | the **order**: gain, then mask |
-| `CRT GLOW` | crt-royale | halation and diffusion weights |
-| `CRT EDGE` | the famicom RF decoder | the vignette coefficient |
-| `CRT ROLL` | [crt-beam-simulator](https://github.com/blurbusters/crt-beam-simulator) © Mark Rejhon / Timothy Lottes, MIT | the rolling scan, and the blur-reduction relation |
-
-Nothing links against any of them and nothing is copied from them.
+Three shaders are the reference for this pass — crt-royale, crt-sony-megatron
+and crt-beam-simulator. Nothing links against any of them and nothing is
+copied from them; see [Credits](#credits).
 
 **The beam** is royale's one essential idea: a scanline is not a fixed dark
 stripe, the spot *grows with the signal*. A bright line swells until it nearly
@@ -659,6 +665,21 @@ already-correct image just yields a dim image. A real tube runs the gun harder
 to pay for it. So gain comes first, then the mask — which is what `MASK_GAIN`
 is for, and why the mask rungs don't simply darken. Use some `CRT GLOW` with a
 mask; the glow is what stops the pattern reading as dirt on the screen.
+
+**The glow has a colour**, and `GLOW COLOUR` is the one row here that shows
+its choices rather than naming them — a strip of the actual colours, with a
+mark under the one selected. `9300K` means nothing to anyone who has not
+lined up a monitor, and `AMBER` against `GREEN` against `5500K` is not a
+choice anybody can make from five letters.
+
+![`GLOW COLOUR`, with the swatch strip beside the row and the mark under the value](docs/glow-colour-swatches.png)
+
+The strip is drawn into the picture on its way through the pass, not over the
+finished frame — so it bends with its own row under `RF CURVE` instead of
+sitting flat on curved glass, and the mask and scanlines happen to it too.
+The tint is normalised by its own luma before it reaches the glow, so
+choosing a colour changes the hue and not the strength; otherwise this would
+quietly be a second brightness row fighting `CRT GLOW` over one quantity.
 
 ### `CRT EDGE` is two things, not one
 
@@ -897,6 +918,20 @@ look, so the two do not contend for input.
 Still not specifically reported on: whether the glare pass *looks* right drawn
 over a first-person 3D view, as opposed to merely running. `3D LIGHT` → `OFF`
 disables just that if it does not.
+
+## Credits
+
+The RF and CRT passes are reimplementations. Nothing here links against any of
+the work below, and nothing is copied from it — what was taken is the physics
+and the published constants, with thanks to their authors:
+[famicom-rf-hackrf-decoder](https://github.com/GOROman/famicom-rf-hackrf-decoder)
+© GOROman (MIT) ·
+[crt-royale](https://github.com/libretro/slang-shaders/tree/master/crt/shaders/crt-royale)
+© TroggleMonkey (GPLv2+) ·
+[crt-sony-megatron](https://github.com/libretro/slang-shaders/blob/master/hdr/shaders/crt-sony-megatron.slangp)
+© Major Pain The Cactus ·
+[crt-beam-simulator](https://github.com/blurbusters/crt-beam-simulator)
+© Mark Rejhon / Timothy Lottes (MIT).
 
 ## Licence
 

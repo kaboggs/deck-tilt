@@ -28,13 +28,15 @@ SRC="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 # against the lib directory on every run so it cannot drift again.
 FILES=(
   manifest.json main.lua LICENSE NOTICE.md README.md install.sh
-  lib/AxisMap.lua lib/DeckSprite.lua lib/GbcLight.lua lib/GyroMenu.lua
+  lib/AxisMap.lua lib/DeckIcon.lua lib/DeckSprite.lua lib/GbcLight.lua
+  lib/GyroMenu.lua
   lib/CrtBeam.lua lib/HelpScreen.lua lib/Imu.lua lib/Motion.lua lib/Overlay.lua
   lib/RfTv.lua
   lib/Setting.lua lib/Settings.lua
   tests/deck_tilt_test.lua
   docs/axis-map.gif docs/world-light.gif
   docs/help-page.png docs/sd-gyro-menu.png
+  docs/crt-mask-trinitron.png docs/glow-colour-swatches.png
 )
 
 say()  { printf '%s\n' "$*"; }

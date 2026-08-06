@@ -73,6 +73,8 @@ extern number pixelScale;
 extern number rfStrength;   // master, 0 = off
 extern number rfDots;       // Y/C leakage -> dot crawl
 extern number rfColour;     // chroma gain -> cross-colour, smear
+extern number rfChroma;     // chroma BANDWIDTH -> how far colour smears
+extern number rfTint;       // subcarrier phase error, in radians
 extern number rfScan;       // scanline depth
 extern number rfCurve;      // barrel + vignette
 extern number rfNoise;      // RF snow
@@ -100,6 +102,14 @@ extern number rfNoise;      // RF snow
 // not a performance shortcut -- it is why colour smears sideways past a hard
 // edge while the edge itself stays sharp, which is the single most
 // recognisable composite artefact there is.
+//
+// It is the BASE of the width now rather than the width itself: RF CHROMA
+// scales it, because how far colour runs past an edge is a property of the
+// SET (its chroma bandwidth) and not of the standard.  A studio monitor
+// decoding the same signal keeps colour much tighter than a portable does,
+// and that difference is the single biggest reason two CRTs fed the same
+// tape do not look alike.  NTSC allotted about 1.3MHz to I and 0.5MHz to Q
+// against luma's 4.2; a cheap set threw both away down to a few hundred kHz.
 #define UV_WIDEN 2.0
 
 #define BARREL_K1 0.055     // sdl_display.cpp CrtLut
@@ -167,6 +177,13 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 pc)
     float ySum = 0.0, uSum = 0.0, vSum = 0.0;
     float yW = 0.0, uvW = 0.0;
 
+    // How wide the chroma average is, in taps. Clamped above 0.25 rather than
+    // allowed to reach zero: at zero every UV weight is zero, uvW is zero, and
+    // the divide below falls back on its epsilon and produces whatever the
+    // last tap happened to be. NARROW is meant to be a tight decoder, not an
+    // undefined one.
+    float uvWide = max(UV_WIDEN * rfChroma, 0.25);
+
     for (int i = -TAPS; i <= TAPS; i++) {
         float off = float(i) * TAP_STEP;
         vec2 stc = uv + vec2(off * texelPerGb.x, 0.0);
@@ -187,14 +204,26 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 pc)
         ySum += comp * wy;
         yW += wy;
 
-        // chroma: demod against the SAME angle, then a wider average.  Luma
+        // chroma: demod against the same angle PLUS whatever error the set's
+        // reference oscillator is carrying, then a wider average.  Luma
         // detail sitting near the subcarrier frequency demods into U/V here
         // and comes out as colour that was never in the source -- cross
         // colour, for free, because we did not special-case it.
-        float wuv = 1.0 - abs(off) / (float(TAPS) * TAP_STEP * UV_WIDEN);
+        //
+        // rfTint is that error, and it is the whole of "Never The Same
+        // Color": NTSC sends hue as the PHASE of the subcarrier, so a
+        // receiver whose reference is a few degrees out of step decodes every
+        // hue rotated by those degrees.  It is a receiver fault rather than a
+        // signal one, which is why it is demodulated in and not encoded in --
+        // encoding it would mean the picture really was that colour, and a
+        // second set would then agree with the first, which is the one thing
+        // NTSC never did.
+        float thd = th + rfTint;
+        float sd = sin(thd), cd = cos(thd);
+        float wuv = 1.0 - abs(off) / (float(TAPS) * TAP_STEP * uvWide);
         wuv = max(wuv, 0.0);
-        uSum += 2.0 * comp * s * wuv;
-        vSum += 2.0 * comp * c * wuv;
+        uSum += 2.0 * comp * sd * wuv;
+        vSum += 2.0 * comp * cd * wuv;
         uvW += wuv;
     }
 
@@ -269,7 +298,21 @@ RfTv.SHADER_SRC = SHADER_SRC
 -- a 256x240 tube concentrated.
 RfTv.STRENGTH = { off = 0, soft = 0.45, normal = 0.8, harsh = 1.0 }
 RfTv.DOTS     = { off = 0, low = 0.4, normal = 1.0, high = 1.8 }
-RfTv.COLOUR   = { off = 0, low = 0.5, normal = 1.0, high = 1.6 }
+RfTv.COLOUR   = { off = 0, faint = 0.25, low = 0.5, normal = 1.0,
+                  high = 1.6, max = 2.4 }
+-- Chroma BANDWIDTH, as a multiplier on UV_WIDEN -- how far colour runs past
+-- an edge, which is a different question from how much colour there is.
+-- STUDIO is a monitor holding colour nearly as tight as luma; PORTABLE is a
+-- cheap set that threw its chroma bandwidth away and smears a red roof half
+-- way across the sky.
+RfTv.CHROMA   = { studio = 0.45, tight = 0.7, normal = 1.0, wide = 1.6,
+                  portable = 2.4 }
+-- Subcarrier phase error, in RADIANS. Negative rotates hues towards green,
+-- positive towards red -- which is exactly what the TINT knob on the front of
+-- an NTSC set did, and the reason it was there at all. 0.17 rad is about 10
+-- degrees, 0.35 about 20.
+RfTv.TINT     = { off = 0, green = -0.17, greenmore = -0.35,
+                  red = 0.17, redmore = 0.35 }
 RfTv.SCAN     = { off = 0, low = 0.45, normal = 1.0, high = 1.0 }
 RfTv.CURVE    = { off = 0, low = 0.5, normal = 1.0, high = 2.0 }
 RfTv.NOISE    = { off = 0, low = 0.35, normal = 1.0, high = 2.2 }
@@ -369,6 +412,8 @@ function RfTv.apply(canvas, pixelScale)
     sh:send("rfStrength", amount(RfTv.STRENGTH, Settings.rf, "off"))
     sh:send("rfDots", amount(RfTv.DOTS, Settings.rfdots, "normal"))
     sh:send("rfColour", amount(RfTv.COLOUR, Settings.rfcolour, "normal"))
+    sh:send("rfChroma", amount(RfTv.CHROMA, Settings.rfchroma, "normal"))
+    sh:send("rfTint", amount(RfTv.TINT, Settings.rftint, "off"))
     sh:send("rfScan", amount(RfTv.SCAN, Settings.rfscan, "normal"))
     sh:send("rfCurve", amount(RfTv.CURVE, Settings.rfcurve, "low"))
     sh:send("rfNoise", amount(RfTv.NOISE, Settings.rfnoise, "off"))

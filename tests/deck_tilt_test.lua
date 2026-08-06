@@ -1183,27 +1183,31 @@ do
     return hooks:call("ui.options.rows", vanilla, nil, rows)
   end
 
-  -- 1. the engine's own display group, gbcfx present: the row's natural home
+  -- 1. the engine's full display group. The row goes FIRST from 0.6.0 on:
+  --    it is the front door to every setting the mod has and to the SENSOR
+  --    readout, which is the one thing on this menu a player needs when
+  --    nothing is happening.
   local out = callWith({ "colors", "gbcfx", "tilt", "zoom", "mods", "controls" })
-  T.eq(indexOf(out, "DECK_TILT:gyro"), indexOf(out, "gbcfx") + 1,
-    "SD-GYRO sits directly under GBC FX -- the light it moves")
+  T.eq(indexOf(out, "DECK_TILT:gyro"), 1,
+    "SD-GYRO is the first row on the OPTIONS menu")
 
   -- 2. DRAMATIC_SHAPE installed, which removes BOTH gbcfx and tilt. This is
   --    the arrangement on the author's own machine, so it is the case that
-  --    actually ships.
+  --    actually ships. Nothing it removes can move the row now, which is the
+  --    point of having dropped the anchors.
   out = callWith({ "textSpeed", "colors", "zoom", "videoMode", "mods", "controls" })
-  T.eq(indexOf(out, "DECK_TILT:gyro"), indexOf(out, "colors") + 1,
-    "with GBC FX and TILT gone it falls back to COLORS, still in the display "
-    .. "group")
+  T.eq(indexOf(out, "DECK_TILT:gyro"), 1,
+    "still first with GBC FX and TILT gone -- no anchor left to lose")
   T.check(indexOf(out, "DECK_TILT:gyro") < indexOf(out, "mods"),
     "and above MODS/CONTROLS rather than below them, where it cannot be found")
 
-  -- 3. no anchor at all -- a future engine renaming all three. A row in the
-  --    wrong place is a nuisance; a LOST row is a bug, so this must append
-  --    rather than drop.
+  -- 3. a menu sharing not one id with the engine's -- a future engine
+  --    renaming everything. The old version needed an anchor here and fell
+  --    back to appending at the bottom; there is nothing left to find, so
+  --    there is nothing left to fail.
   out = callWith({ "aaa", "bbb" })
-  T.eq(indexOf(out, "DECK_TILT:gyro"), 3,
-    "with no anchor to find it appends, rather than losing the row")
+  T.eq(indexOf(out, "DECK_TILT:gyro"), 1,
+    "first even on a menu it recognises nothing in")
 
   -- 4. nothing else may be disturbed. The splice is an insert, so every row
   --    the engine and every other mod supplied must survive it, in order.
@@ -1217,6 +1221,90 @@ do
   T.eq(table.concat(kept, ","), table.concat(before, ","),
     "and every other row survives in its original order -- including another "
     .. "mod's")
+end
+
+-- ------- the tilting icon beside the row's name
+--
+-- It is the AXIS MAP's console at a reduced scale, not a second drawing of
+-- one -- so what is worth asserting is that it stays THAT console, that it
+-- still fits the strip the row leaves for it, and that the rock is even.
+do
+  local DeckIcon = V.require("DeckIcon")
+  local DeckSprite = V.require("DeckSprite")
+
+  local w, h = DeckIcon.size()
+  T.check(w > 0 and h > 0, "the icon has a size derived from the sprite")
+  -- 160px screen, and OptionRows draws its box to the full width. The icon
+  -- starts after the label and must not run off the right-hand edge.
+  T.check(DeckIcon.X + w <= 160,
+    ("the icon fits the strip right of the label (ends at %.1f)"):format(
+      DeckIcon.X + w))
+  -- ...and must not collide with the label itself: `SD-GYRO` is 7 glyphs of
+  -- 8px from x=16, so it ends at 72.
+  T.check(DeckIcon.X >= 72, "and starts clear of the SD-GYRO label")
+  -- ...and must keep a clear GAP on every side at its most tilted.
+  --
+  -- The bound is the rotated bounding box, not the diagonal: the diagonal is
+  -- what a 90-degree turn would need, and this turns about 7 degrees, so
+  -- using it rejects sizes that fit perfectly well. Measured against the
+  -- same centre arithmetic the frame uses, not a restatement of it.
+  local ca = math.abs(math.cos(DeckIcon.ANGLE))
+  local sa = math.abs(math.sin(DeckIcon.ANGLE))
+  local tiltH = h * ca + w * sa
+  local tiltW = w * ca + h * sa
+  local gap = DeckIcon.GAP
+
+  -- slot 1: the box spans y = 0..32
+  local cx, cy = DeckIcon.centreFor(1)
+  T.check(cy - tiltH * 0.5 >= gap,
+    ("a gap of at least %d above the tilted icon (%.2f)"):format(
+      gap, cy - tiltH * 0.5))
+  T.check(32 - (cy + tiltH * 0.5) >= gap,
+    ("and below it (%.2f)"):format(32 - (cy + tiltH * 0.5)))
+  -- `SD-GYRO` is 7 glyphs of 8px from x=16, so the label ends at 72
+  T.check(cx - tiltW * 0.5 - 72 >= gap,
+    ("and between it and the SD-GYRO label (%.2f)"):format(
+      cx - tiltW * 0.5 - 72))
+  T.check(160 - (cx + tiltW * 0.5) >= gap,
+    ("and between it and the right edge of the screen (%.2f)"):format(
+      160 - (cx + tiltW * 0.5)))
+
+  -- The row is only marked when it is actually on screen -- a stale slot
+  -- would draw the badge against whatever scrolled into that box next.
+  DeckIcon.mark({ { id = "other" }, { id = "DECK_TILT:gyro" } }, 0)
+  T.eq(DeckIcon.slot, 2, "the icon marks the slot its row is in")
+  DeckIcon.mark({ { id = "other" } }, 0)
+  T.eq(DeckIcon.slot, nil, "and marks nothing when the row is not visible")
+  DeckIcon.mark(nil, 0)
+  T.eq(DeckIcon.slot, nil, "and survives being handed no rows at all")
+
+  -- It must be the SAME art as the AXIS MAP page, scaled -- not a copy that
+  -- can drift. If DeckSprite's dimensions change, the icon's must follow.
+  T.eq(w, DeckSprite.W * DeckIcon.SCALE,
+    "the icon is DeckSprite's own width, scaled")
+  T.eq(h, DeckSprite.H * DeckIcon.SCALE,
+    "and its height -- one console in this mod, drawn at two sizes")
+  -- Half scale loses the buttons to nearest sampling, which is the whole
+  -- reason the console is recognisable. This is the floor that was measured.
+  T.check(DeckIcon.SCALE > 0.5,
+    "and is scaled above the point where nearest sampling eats the buttons")
+
+  -- The rock passes THROUGH level rather than snapping between extremes.
+  T.eq(#DeckIcon.CYCLE, 4, "the cycle is four steps")
+  T.eq(DeckIcon.CYCLE[2], 0, "step 2 is level")
+  T.eq(DeckIcon.CYCLE[4], 0, "and so is step 4 -- it rocks through the middle")
+  T.eq(DeckIcon.CYCLE[1] + DeckIcon.CYCLE[3], 0,
+    "and the two extremes are equal and opposite, so the tilt is even")
+
+  -- Driven by the wall clock, because this is drawn from a DRAW hook and
+  -- nothing guarantees it runs once per logic step.
+  T.eq(DeckIcon.frameAt(0), 1, "the cycle starts on the first step")
+  T.eq(DeckIcon.frameAt(DeckIcon.FRAME_TIME * 2.5), 3, "and advances with time")
+  T.eq(DeckIcon.frameAt(DeckIcon.FRAME_TIME * 4), 1, "and wraps after four")
+  T.eq(DeckIcon.frameAt(nil), 1, "a missing clock does not throw")
+  T.eq(DeckIcon.angleAt(0), -DeckIcon.ANGLE, "step 1 tips one way")
+  T.eq(DeckIcon.angleAt(DeckIcon.FRAME_TIME * 2), DeckIcon.ANGLE,
+    "and step 3 tips the other")
 end
 
 run.release()

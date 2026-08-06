@@ -136,6 +136,10 @@ function GyroMenu.new(game)
         return note and (text .. " " .. note) or text
       end
     end
+    -- remembered by ID rather than by position: the row list grows, and a
+    -- hardcoded index would put the swatches beside whatever moved into
+    -- that slot next
+    if setting.key == "beamglowcol" then self.swatchRowId = row.id end
     add(row)
     if setting.key == "motion" then add(axisRow) end
   end
@@ -225,10 +229,45 @@ end
 GyroMenu.HINT = "SELECT: MORE INFO"
 GyroMenu.HINT_X = 8
 
+-- GLOW COLOUR shows its colours, not just their names.
+--
+-- 9300K means nothing to anyone who has not lined a monitor up, and AMBER
+-- against GREEN against 5500K is not a choice anybody can make from five
+-- letters. So the row carries a strip of the actual colours with a mark
+-- under the chosen one -- the same job the measured readout does on CRT
+-- ROLL: put the thing you need in order to choose next to the choice.
+--
+-- The strip cannot be drawn here. This page draws into the Game Boy
+-- framebuffer, which PaletteFX then remaps by SHADE -- so a colour drawn
+-- here arrives as a grey. What this does instead is publish WHERE the row
+-- is, and GbcLight draws the strip after the frame is composed and past the
+-- palette. See drawSwatches there.
+--
+-- Published only when the row is actually on screen: a request carrying a
+-- slot that has scrolled away would draw the strip against the wrong row.
+function GyroMenu:publishSwatches()
+  local OptionRows = require("src.ui.OptionRows")
+  local scroll = self.scroll or 0
+  local okB, CrtBeam = pcall(V.require, "CrtBeam")
+  if not okB or not CrtBeam then return end
+  for slot = 1, OptionRows.VISIBLE do
+    local row = self.rows[scroll + slot]
+    if row and row.id == self.swatchRowId then
+      CrtBeam.swatchStrip = {
+        slot = slot,
+        values = Settings.beamglowcol.values,
+        index = Settings.beamglowcol:pos(),
+      }
+      return
+    end
+  end
+end
+
 function GyroMenu:draw()
   local OptionRows = require("src.ui.OptionRows")
   OptionRows.draw(self.game, self.rows, self.index, self.scroll or 0,
                   "BACK", #self.rows + 1)
+  self:publishSwatches()
 
   -- Every row has a page of plain English behind SELECT, which is worth
   -- nothing if nobody knows it is there.  OptionRows leaves this strip free:

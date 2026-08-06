@@ -223,12 +223,38 @@ Settings.rfdots = Setting.new("rfdots", "RF DOTS",
   "normal")
 
 Settings.rfcolour = Setting.new("rfcolour", "RF COLOUR",
-  { "off", "low", "normal", "high" }, { "OFF", "LOW", "NORMAL", "HIGH" },
-  "How far colour spreads sideways, and how much false colour appears on "
-  .. "fine detail. A TV carries colour with less detail than brightness, so "
-  .. "colour runs past an edge while the edge stays sharp. OFF gives a black "
-  .. "and white picture.",
+  { "off", "faint", "low", "normal", "high", "max" },
+  { "OFF", "FAINT", "LOW", "NORMAL", "HIGH", "MAX" },
+  "How strong the colour is, and how much false colour appears on fine "
+  .. "detail. A TV carries colour separately from brightness, and turning "
+  .. "this up puts more of it in the signal, so more of it leaks into places "
+  .. "it does not belong. Use RF CHROMA to change how far it spreads instead. "
+  .. "OFF gives a black and white picture.",
   "normal")
+
+-- Bandwidth is a different question from gain, and one row cannot ask both:
+-- RF COLOUR is how MUCH colour there is, this is how far it RUNS. Two sets
+-- fed the same tape differ here more than anywhere else.
+Settings.rfchroma = Setting.new("rfchroma", "RF CHROMA",
+  { "studio", "tight", "normal", "wide", "portable" },
+  { "STUDIO", "TIGHT", "NORMAL", "WIDE", "PORTABLE" },
+  "How far colour spreads sideways past an edge. A TV carries colour with "
+  .. "less detail than brightness, so colour runs past an edge while the edge "
+  .. "itself stays sharp. STUDIO is a monitor that holds colour almost as "
+  .. "tightly as brightness. PORTABLE is a cheap set that lets a red roof "
+  .. "smear into the sky. This row does nothing while RF COLOUR is OFF.",
+  "normal")
+
+-- The tint knob, and the reason it existed.
+Settings.rftint = Setting.new("rftint", "RF TINT",
+  { "off", "green", "greenmore", "red", "redmore" },
+  { "OFF", "GREEN", "GREEN+", "RED", "RED+" },
+  "Turns every colour in the picture one way or the other. American TVs sent "
+  .. "colour in a way that let each set get the hue slightly wrong, so sets "
+  .. "had a knob on the front to correct it and no two of them agreed. GREEN "
+  .. "and RED are the two directions it went wrong in. OFF is a set that is "
+  .. "correctly adjusted. This row does nothing while RF COLOUR is OFF.",
+  "off")
 
 Settings.rfscan = Setting.new("rfscan", "RF SCAN",
   { "off", "low", "normal", "high" }, { "OFF", "LOW", "NORMAL", "HIGH" },
@@ -251,6 +277,46 @@ Settings.rfnoise = Setting.new("rfnoise", "RF NOISE",
   .. "part of the picture. OFF is a clean signal and is the default.",
   "off")
 
+-- ------- the controls on the front of the set
+--
+-- The three rows anyone who ever owned a television already knows how to
+-- use. They are part of the beam pass because they are what the SET does to
+-- the picture on its way to the phosphor -- so they run before the glow and
+-- the mask, and turning contrast up makes the glow bloom harder, the way it
+-- does on a real one.
+--
+-- Unlike every other row in this section these are not OFF by default in the
+-- sense of being absent: they default to 100%, which is unchanged, and the
+-- pass stays switched off until one of them is moved.
+Settings.beammono = Setting.new("beammono", "CRT MONO",
+  { "off", "on" }, { "OFF", "ON" },
+  "Shows the picture in black and white, the way a set without colour did. "
+  .. "This is a switch rather than a level, so you can turn it on and off "
+  .. "without losing the amount of colour you set on CRT COLOUR. While it is "
+  .. "ON, CRT COLOUR does nothing.",
+  "off")
+
+Settings.beamsat = Setting.new("beamsat", "CRT COLOUR",
+  { "0", "25", "50", "75", "100", "125", "150", "175", "200" },
+  { "0%", "25%", "50%", "75%", "100%", "125%", "150%", "175%", "200%" },
+  "How strong the colours are. 100% leaves the picture alone. 0% is black "
+  .. "and white, reached with the colour control the way a real set does it. "
+  .. "Above 100% the colours are pushed further than they really are, which "
+  .. "is what a set looks like with its colour control wound up: reds glow "
+  .. "and lose their detail. This is different from RF COLOUR, which changes "
+  .. "how much colour is in the signal before the set sees it.",
+  "100")
+
+Settings.beamcontrast = Setting.new("beamcontrast", "CRT CONTRAST",
+  { "50", "60", "70", "80", "90", "100", "110", "120", "130", "140", "150" },
+  { "50%", "60%", "70%", "80%", "90%", "100%", "110%", "120%", "130%",
+    "140%", "150%" },
+  "The difference between the light and dark parts of the picture. 100% "
+  .. "leaves it alone. Below that the picture flattens towards grey. Above "
+  .. "it the bright parts get brighter and the dark parts get darker. Use "
+  .. "some of this with CRT MASK, which costs contrast by design.",
+  "100")
+
 -- ------- the electron-beam pass
 --
 -- Additive with TV/RF and independent of it: RF is the SIGNAL arriving at the
@@ -258,14 +324,35 @@ Settings.rfnoise = Setting.new("rfnoise", "RF NOISE",
 -- and every one of them has an OFF, so any combination can be switched off
 -- without touching the others -- including all of them, which is the default.
 Settings.beammask = Setting.new("beammask", "CRT MASK",
-  { "off", "grille", "slot", "shadow" },
-  { "OFF", "GRILLE", "SLOT", "SHADOW" },
+  { "off", "grille", "slot", "shadow", "pvm", "trinitron", "dot" },
+  { "OFF", "GRILLE", "SLOT", "SHADOW", "PVM", "TRINITRON", "DOT" },
   "The pattern of coloured dots or stripes on the front of a tube. GRILLE is "
   .. "unbroken vertical stripes. SLOT is stripes broken into short blocks "
-  .. "that step sideways every other row. SHADOW is round dots. The picture "
-  .. "is made brighter first, so the pattern costs light that was added "
-  .. "rather than light you had. OFF removes the pattern.",
+  .. "that step sideways every other row, which is what most TVs in homes "
+  .. "used. SHADOW is round dots. PVM is the stripes of a studio monitor, "
+  .. "with black glass left between each group of three, which is what gives "
+  .. "those monitors their deep picture. TRINITRON is stripes with the two "
+  .. "fine wires that Sony strung across the tube to hold them steady: you "
+  .. "can see their shadow across the picture, and that is correct. DOT is "
+  .. "the fine round dots of an expensive set. Use CRT PITCH to set how "
+  .. "large the pattern is. The picture is made brighter first, so the "
+  .. "pattern costs light that was added rather than light you had. OFF "
+  .. "removes the pattern.",
   "off")
+
+-- Pitch is what actually separates one real tube from another: the same
+-- geometry at 0.25mm and at 0.8mm are a broadcast monitor and a living-room
+-- set, and no amount of choosing between GRILLE and SLOT expresses that.
+Settings.beammaskpitch = Setting.new("beammaskpitch", "CRT PITCH",
+  { "fine", "normal", "wide", "widest" },
+  { "FINE", "NORMAL", "WIDE", "WIDEST" },
+  "How large the pattern on the front of the tube is. An expensive monitor "
+  .. "has a very fine pattern that you cannot see from a normal distance. A "
+  .. "large old TV in a living room has a coarse one you can count from "
+  .. "across the room. This is the row that decides which kind of set you "
+  .. "are looking at, more than the pattern itself does. This row does "
+  .. "nothing while CRT MASK is OFF.",
+  "normal")
 
 Settings.beamscan = Setting.new("beamscan", "CRT BEAM",
   { "off", "low", "normal", "high" }, { "OFF", "LOW", "NORMAL", "HIGH" },
@@ -282,6 +369,25 @@ Settings.beamglow = Setting.new("beamglow", "CRT GLOW",
   .. "the glow is what stops the pattern looking like dirt on the screen. "
   .. "OFF removes it.",
   "off")
+
+-- The one row on this page with a picture instead of only a word: the swatch
+-- strip is drawn beside it. A colour cannot be chosen from its name -- 9300K
+-- means nothing to anyone who has not lined up a monitor -- so the page shows
+-- the colours and marks the one you are on. See GyroMenu.drawSwatches.
+Settings.beamglowcol = Setting.new("beamglowcol", "GLOW COLOUR",
+  { "white", "k9300", "k7500", "k5500", "amber", "green", "blue" },
+  { "WHITE", "9300K", "7500K", "5500K", "AMBER", "GREEN", "BLUE" },
+  "The colour of the light that spreads out from bright areas. The coating "
+  .. "inside a tube does not give back plain white light, and which white it "
+  .. "gives back is most of what makes one set look different from another. "
+  .. "9300K is the cold blue-white that nearly every Japanese set left the "
+  .. "factory at. 7500K is what studio monitors were set to. 5500K is the "
+  .. "warm white of a late or well-used set. AMBER, GREEN and BLUE are the "
+  .. "single-colour tubes of old monitors rather than TVs. WHITE adds no "
+  .. "colour at all. The colours are shown next to this row, with a mark "
+  .. "under the one you have chosen. This row does nothing while CRT GLOW "
+  .. "is OFF.",
+  "white")
 
 Settings.beamedge = Setting.new("beamedge", "CRT EDGE",
   { "off", "low", "normal", "high" }, { "OFF", "LOW", "NORMAL", "HIGH" },
@@ -314,7 +420,14 @@ Settings.beamedgesoft = Setting.new("beamedgesoft", "EDGE SOFT",
 -- everywhere else; the tube is the thing a player can actually have an
 -- opinion about, and the ratio is then measured arithmetic.  See CrtBeam.
 Settings.beamroll = Setting.new("beamroll", "CRT ROLL",
-  { "off", "60hz", "50hz", "40hz" }, { "OFF", "60HZ", "50HZ", "40HZ" },
+  { "off",
+    "15hz", "20hz", "25hz", "30hz", "35hz", "40hz", "45hz", "50hz",
+    "55hz", "60hz",
+    "70hz", "80hz", "90hz", "100hz", "110hz", "120hz" },
+  { "OFF",
+    "15HZ", "20HZ", "25HZ", "30HZ", "35HZ", "40HZ", "45HZ", "50HZ",
+    "55HZ", "60HZ",
+    "70HZ", "80HZ", "90HZ", "100HZ", "110HZ", "120HZ" },
   "Lights each line for a moment instead of for the whole frame, the way a "
   .. "tube does. This makes movement clearer. Choose the speed of the tube. "
   .. "60HZ is the speed of a real one and is the right choice on this "
@@ -322,7 +435,15 @@ Settings.beamroll = Setting.new("beamroll", "CRT ROLL",
   .. "flicker. The number next to this row is how much less blurred movement "
   .. "is, measured on your screen right now. It needs your screen to refresh "
   .. "faster than the tube: this console refreshes 90 times a second, so a "
-  .. "60HZ tube gives 33 per cent. A faster screen gives more.",
+  .. "60HZ tube gives 33 per cent. A faster screen gives more. 20HZ is not a "
+  .. "real tube speed. It is there because it shows you the band of light "
+  .. "sweeping down the screen instead of hiding it, which is what you see "
+  .. "for a moment when the game starts up. It flickers. The speeds below "
+  .. "about 30HZ all show the band this way. A speed FASTER than your screen "
+  .. "cannot work at all, and this row will say NO HZ next to it when you "
+  .. "pick one: on this console that is anything from 90HZ up. Those speeds "
+  .. "are here for a faster screen, and the row measures rather than assumes, "
+  .. "so it will tell you the truth on whatever you are playing on.",
   "off")
 
 Settings.order = { Settings.motion,
@@ -331,10 +452,13 @@ Settings.order = { Settings.motion,
                    Settings.xrange, Settings.yrange,
                    Settings.smooth, Settings.level, Settings.shadow,
   Settings.overlay, Settings.shimmer, Settings.glare,
-  Settings.rf, Settings.rfdots, Settings.rfcolour, Settings.rfscan,
+  Settings.rf, Settings.rfdots, Settings.rfcolour, Settings.rfchroma,
+  Settings.rftint, Settings.rfscan,
   Settings.rfcurve, Settings.rfnoise,
-  Settings.beammask, Settings.beamscan, Settings.beamglow, Settings.beamedge,
-  Settings.beamedgesoft,
+  Settings.beammono, Settings.beamsat, Settings.beamcontrast,
+  Settings.beammask, Settings.beammaskpitch,
+  Settings.beamscan, Settings.beamglow, Settings.beamglowcol,
+  Settings.beamedge, Settings.beamedgesoft,
   Settings.beamroll,
   Settings.hotkey }
 
