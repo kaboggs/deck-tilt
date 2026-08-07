@@ -79,6 +79,38 @@ GbcLight.install()
 -- is never at risk from an ornament.
 V.require("DeckIcon").install()
 
+-- ------- this mod's own rumble engine
+--
+-- The queue, the heartbeat and the mixer, all on the game's clock. Driven
+-- from Game:update rather than a render path because there are two render
+-- paths -- the engine's GBC FX present and this mod's overlay -- and which
+-- one runs depends on a setting in a DIFFERENT mod. update runs either way.
+-- Wrapped rather than hooked for the same reason keypressed below is: the
+-- engine offers no event for it.
+--
+-- pcall'd and one-way: a fault here must cost the rumble, not the frame.
+do
+  local Game = require("src.core.Game")
+  local inner = Game.update
+  local RumbleEvents = V.require("RumbleEvents")
+  local broken = false
+  function Game:update(dt)
+    if not broken and not pcall(RumbleEvents.tick, dt) then broken = true end
+    return inner(self, dt)
+  end
+end
+
+-- ------- the DMG shades
+--
+-- Applied here and again whenever the row changes. It rewrites the engine's
+-- CLASSIC palette in place rather than editing a file, so update.sh cannot
+-- revert it and OFF hands the engine's own numbers straight back.
+pcall(function() V.require("DmgPalette").apply() end)
+
+-- The events that feed it. Installed once; every hook checks the settings at
+-- fire time, so this costs nothing while the row is off.
+pcall(function() V.require("RumbleEvents").install(mod) end)
+
 -- ------- settings
 
 mod.options:define(Settings.schema())
@@ -140,6 +172,9 @@ end)
 mod.events:on("mod.options_changed", function(payload)
   if not (payload and payload.mod == mod.id) then return end
   Settings.sync(payload.key, payload.value)
+  if payload.key == "dmgpal" then
+    pcall(function() V.require("DmgPalette").apply() end)
+  end
 end)
 
 -- ------- the quick-centre key

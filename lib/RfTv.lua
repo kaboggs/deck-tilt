@@ -323,7 +323,19 @@ end
 
 -- Is the pass meant to draw at all?  One question, asked in one place, so the
 -- row, the status line and the frame cannot disagree about it.
+-- Every picture pass answers `false` here while the SCREEN FX master row is
+-- off. The gate lives in wanted() rather than only in the chain that calls
+-- apply(), so there is ONE answer to "does this pass run" and a caller
+-- reaching for a pass directly cannot slip past the master.
+local function fxOff()
+  local ok, S = pcall(function() return V.require("Settings") end)
+  if not ok or not S or not S.screenFxOn then return false end
+  local okV, on = pcall(S.screenFxOn)
+  return okV and not on
+end
+
 function RfTv.wanted()
+  if fxOff() then return false end
   return amount(RfTv.STRENGTH, Settings.rf, "off") > 0
 end
 

@@ -132,6 +132,10 @@ local SHADOW_BASE = 3.0
 -- becomes more prominent.
 local SHADOW_LEN = SHADOW_BASE * 1.15
 
+-- Published so the SHADOW AMT row's NORMAL rung can mean exactly this number
+-- rather than a copy of it that stops agreeing the moment either is touched.
+GbcLight.SHADOW_STOCK_LEN = SHADOW_LEN
+
 -- A small downward lean, applied to the DIRECTION before it is normalised
 -- rather than added to the result.  Added afterwards it would bias the length
 -- and reintroduce the left/right asymmetry; folded into the direction it only
@@ -164,15 +168,31 @@ local SOFT = 0.22
 -- `enabled` false returns the engine's own constant, so the row genuinely
 -- restores stock rather than approximating it.
 -- mode is "follow" | "fixed" | "off"
-function GbcLight.shadowOffset(lx, ly, mode)
-  if mode ~= "follow" then return SHADOW_BASE, SHADOW_BASE end
+--
+-- `lenPx` is the throw the SHADOW AMT row asks for, defaulting to the stock
+-- 3.45. It is a PARAMETER rather than a read of the setting so this stays a
+-- pure function of its inputs and the test suite can walk the whole ladder
+-- without touching stored options.
+--
+-- The softening near the pivot is a fraction of the throw rather than a fixed
+-- number of pixels, so it scales with it: the worst frame-to-frame jump was
+-- measured at 0.01px on the stock length, which is 0.08px at the longest rung
+-- and still well under the one pixel that would make the reversal visible.
+function GbcLight.shadowOffset(lx, ly, mode, lenPx)
+  local L = lenPx or SHADOW_LEN
+  -- FIXED is the engine's own down-right constant, scaled by the same ratio,
+  -- so the row still lengthens a shadow that has been told not to move.
+  if mode ~= "follow" then
+    local k = L / SHADOW_LEN
+    return SHADOW_BASE * k, SHADOW_BASE * k
+  end
   local dx = 0.5 - (lx or 0.5)
   local dy = 0.5 - (ly or 0.5) + DOWN_LEAN
   local len = math.sqrt(dx * dx + dy * dy)
   if len < 1e-6 then return 0, 0 end
   -- full length everywhere except close to the pivot, where it eases to
   -- nothing so the direction reversal is not visible
-  local scale = SHADOW_LEN * math.min(1, len / SOFT)
+  local scale = L * math.min(1, len / SOFT)
   return dx / len * scale, dy / len * scale
 end
 
@@ -204,26 +224,76 @@ end
 -- not driving -- so with MOTION off, GBC FX off, or no IMU, what gets drawn
 -- is the engine's own output, not an imitation of it.
 local function present(canvas, pixelScale)
-  -- ---- the TV/RF pass goes UNDER everything below ----
+  -- The light, computed ONCE for the whole frame, at the top.  It used to be
+  -- computed inside whichever branch drew it, which was correct while only
+  -- one branch per frame read it -- but the panel pass below reads it too,
+  -- and Motion.light(dt) ADVANCES the filters, so a second call in the same
+  -- frame would run the smoothing at twice its tuned rate.  nil here means
+  -- Motion declined (MOTION off, or no sensor), and every consumer below
+  -- already has a stock answer for that.
+  local dt = (love.timer and love.timer.getDelta and love.timer.getDelta()) or 0
+  local lx, ly = Motion.light(dt)
+
+  -- ---- the passes UNDER everything below ----
   --
-  -- Physical order, and it is the reason this line is first rather than last:
-  -- the RF artefacts are in the SIGNAL, the panel displays that signal, and
-  -- the glare is a reflection off the front of the panel. So RF runs into its
-  -- own buffer here and every path below -- ours and the engine's own -- then
-  -- draws over the result.
+  -- Physical order, and it is the reason these lines are first rather than
+  -- last.  The chain, outermost last: PANEL -> SIGNAL -> TUBE -> the glass
+  -- you look at.  The GBC panel pass is what the picture IS -- its plate,
+  -- grain, shadows and rainbow are part of the image a camera would record,
+  -- so the RF curve and the CRT mask must happen TO them (a panel drawn
+  -- after the curve is a flat sticker on bowed glass, the same failure
+  -- drawSwatches exists to avoid).  RF is that picture as a signal arriving
+  -- at the set, CrtBeam is the tube it is painted onto, and this mod's own
+  -- glare, shimmer and drop shadow are the reflection off the front -- so
+  -- they stay on top of everything, always.  Adding a pass means adding a
+  -- line here and nowhere else.
   --
-  -- Unconditional because RfTv.apply hands back the canvas it was given
-  -- whenever the pass is off or anything failed, so there is no branch to get
-  -- wrong and stockPresent below receives a drawable canvas either way.
-  -- The chain, outermost last: SIGNAL -> TUBE -> the panel you look at.
-  -- RF is what arrives at the set, CrtBeam is the glass it is painted onto,
-  -- and this mod's own glare, shimmer and drop shadow are the reflection off
-  -- the front -- so they stay on top of both, always. Adding a pass means
-  -- adding a line here and nowhere else.
+  -- Unconditional because every apply() hands back the canvas it was given
+  -- whenever its pass is off or anything failed, so there is no branch to
+  -- get wrong and stockPresent below receives a drawable canvas either way.
+  -- ------- the SCREEN FX master
+  --
+  -- One row gates every picture pass, at the point they run rather than by
+  -- changing their settings -- so switching it back on restores exactly what
+  -- was configured. The tilt light below is deliberately outside this: it is
+  -- the mod, not an effect over the picture, and MOTION is its master.
+  local fx = true
+  do
+    local okS, S = pcall(function() return V.require("Settings") end)
+    if okS and S and S.screenFxOn then
+      local okV, on = pcall(S.screenFxOn)
+      if okV then fx = on end
+    end
+  end
+
+  local pre = canvas
+  -- `source` is the frame the overlay's drop shadow is cast from: AFTER the
+  -- panel passes (the shadow should fall over the plate you can actually
+  -- see) and BEFORE the RF and CRT passes (whose scan structure would fake
+  -- occluders -- see the shadow block in Overlay.lua). Initialised to the
+  -- incoming frame so it is still valid with SCREEN FX off.
   local source = canvas
-  canvas = V.require("RfTv").apply(canvas, pixelScale) or canvas
-  canvas = V.require("CrtBeam").apply(canvas, pixelScale) or canvas
-  local rfDrew = (canvas ~= source)
+  if fx then
+    canvas = V.require("PixelTrans").apply(canvas, pixelScale, lx, ly) or canvas
+    -- The panel's own physics -- crosstalk, the cell shadow, its colour and
+    -- its dead lines -- sit with the panel and before the tube, for the same
+    -- reason the GBC pass does: they are part of the picture a camera would
+    -- record, so the curve and the mask must happen TO them.
+    canvas = V.require("DmgPanel").apply(canvas, pixelScale, lx, ly) or canvas
+    -- LCD persistence sits with the PANEL and not with the tube: it is the
+    -- liquid crystal relaxing, so it belongs to the picture the panel makes,
+    -- and the RF curve and CRT mask must then happen TO the trail. Held
+    -- after the curve it would smear the MASK, which does not move and must
+    -- never appear to. (the hardware model holds its state after its own dot grid; the
+    -- note in lib/Ghost says why this deviates.)
+    canvas = V.require("Ghost").apply(canvas, pixelScale) or canvas
+    source = canvas
+    canvas = V.require("RfTv").apply(canvas, pixelScale) or canvas
+    canvas = V.require("CrtBeam").apply(canvas, pixelScale) or canvas
+  end
+  -- measured against `pre`, not `source`: a frame only the panel pass drew
+  -- still has to reach the screen by the plain-draw path below
+  local drew = (canvas ~= pre)
 
   -- GBC FX off, but the overlay wants the frame: draw the light on our own
   -- pass instead of handing back.  Checked BEFORE build(), because build()
@@ -234,14 +304,14 @@ local function present(canvas, pixelScale)
       -- its drop shadow from that rather than from the processed picture, so
       -- the shadow keeps following the GYRO instead of following the
       -- scanlines. See the shadow block in Overlay.lua.
-      return GbcLight.presentOverlay(canvas, pixelScale, source)
+      return GbcLight.presentOverlay(canvas, pixelScale, source, lx, ly)
     end
-    -- TV/RF on, with no light wanted over it.  We cannot hand this to
+    -- A pass drew, with no light wanted over it.  We cannot hand this to
     -- stockPresent: the engine's present is written for a level it does not
     -- have here, and active() is only answering true because WE asked it to
-    -- for this pass.  So draw the buffer plainly -- the RF pass has already
+    -- for this pass.  So draw the buffer plainly -- the passes have already
     -- done all the work, and this is just getting it to the screen.
-    if rfDrew then
+    if drew then
       love.graphics.setColor(1, 1, 1, 1)
       love.graphics.draw(canvas, 0, 0)
       return
@@ -253,8 +323,6 @@ local function present(canvas, pixelScale)
     return stockPresent(canvas, pixelScale)
   end
 
-  local dt = (love.timer and love.timer.getDelta and love.timer.getDelta()) or 0
-  local lx, ly = Motion.light(dt)
   if not lx then return stockPresent(canvas, pixelScale) end
 
   local t = (love.timer and love.timer.getTime and love.timer.getTime()) or 0
@@ -268,7 +336,8 @@ local function present(canvas, pixelScale)
     -- only sent when the rewrite actually landed; the uniform does not
     -- exist otherwise and send() throws on an unknown name
     local mode = Settings.shadow:get()
-    local ox, oy = GbcLight.shadowOffset(lx, ly, mode)
+    local ox, oy = GbcLight.shadowOffset(lx, ly, mode,
+                                         Settings.shadowLenPx(SHADOW_LEN))
     ok = pcall(sh.send, sh, "deckShadowOff", { ox, oy })
     GbcLight.shadowX, GbcLight.shadowY = ox, oy
     if ok and hasAmount then
@@ -325,6 +394,47 @@ function GbcLight.glareAmount()
   return GLARE[Settings.glare:get()] or GLARE.high
 end
 
+-- ------- the colour of the glare
+--
+-- The glare is a reflection off the FRONT of the glass, and a reflection is
+-- the colour of whatever is being reflected. On a real handheld that is the
+-- room -- a tungsten bulb, a window, a screen -- and it is almost never the
+-- neutral white this always added.
+--
+-- Two families here, and they are different claims. WARM through COOL are
+-- light SOURCES a console is realistically held under. AMBER through PINK are
+-- not: they are a choice, for a player who wants the highlight to read as a
+-- colour rather than as a room.
+--
+-- Stored at full saturation and normalised to unit LUMA before it reaches the
+-- shader, so moving down this row changes the hue of the highlight and not
+-- its strength. Without that, BLUE would land visibly dimmer than AMBER for
+-- the same GLARE rung and the two rows would fight each other.
+GbcLight.GLARETINT = {
+  white  = { 1.00, 1.00, 1.00 },
+  warm   = { 1.00, 0.86, 0.68 }, -- tungsten, the usual indoor reflection
+  cool   = { 0.78, 0.88, 1.00 }, -- daylight through a window
+  amber  = { 1.00, 0.72, 0.32 },
+  gold   = { 1.00, 0.84, 0.42 },
+  green  = { 0.62, 1.00, 0.66 },
+  blue   = { 0.55, 0.74, 1.00 },
+  violet = { 0.80, 0.66, 1.00 },
+  pink   = { 1.00, 0.70, 0.85 },
+}
+
+-- Rec. 601 luma, the same weighting the rest of this shader family uses.
+local function unitLuma(c)
+  local y = 0.299 * c[1] + 0.587 * c[2] + 0.114 * c[3]
+  if y <= 1e-4 then return 1, 1, 1 end
+  return c[1] / y, c[2] / y, c[3] / y
+end
+
+function GbcLight.glareTint()
+  local c = GbcLight.GLARETINT[Settings.glaretint:get()]
+        or GbcLight.GLARETINT.white
+  return unitLuma(c)
+end
+
 -- Our own pass, over whatever the engine composed -- including another mod's
 -- 3D render.  Nothing here reads or writes options.gbcfx, so a mod that pins
 -- that value has nothing to fight: it keeps its zero and we never ask for it.
@@ -332,18 +442,25 @@ end
 -- either of them did. Optional: called without it (as the tests do, and as an
 -- older caller would) the shadow falls back to reading the frame it is drawing
 -- over, which is exactly right when nothing ran ahead of it.
-function GbcLight.presentOverlay(canvas, pixelScale, clean)
+-- `lx, ly` is the light position present() already computed this frame.
+-- Optional for the same reason `clean` is; but when present() supplies it,
+-- reading the sensor again here would advance Motion's filters a second time
+-- in one frame, so an older caller falls back and a current one must not.
+function GbcLight.presentOverlay(canvas, pixelScale, clean, lx, ly)
   local Overlay = V.require("Overlay")
   local sh = Overlay.shader()
   if not sh then return stockPresent(canvas, pixelScale) end
 
-  local dt = (love.timer and love.timer.getDelta and love.timer.getDelta()) or 0
-  local lx, ly = Motion.light(dt)
+  if not lx then
+    local dt = (love.timer and love.timer.getDelta and love.timer.getDelta()) or 0
+    lx, ly = Motion.light(dt)
+  end
   if not lx then return stockPresent(canvas, pixelScale) end
 
   local t = (love.timer and love.timer.getTime and love.timer.getTime()) or 0
   local mode = Settings.shadow:get()
-  local ox, oy = GbcLight.shadowOffset(lx, ly, mode)
+  local ox, oy = GbcLight.shadowOffset(lx, ly, mode,
+                                       Settings.shadowLenPx(SHADOW_LEN))
   local ok = pcall(function()
     sh:send("time", t)
     sh:send("pixelScale", math.max(1, math.floor(tonumber(pixelScale) or 1)))
@@ -352,6 +469,8 @@ function GbcLight.presentOverlay(canvas, pixelScale, clean)
     sh:send("deckShadowAmt", (mode == "off") and 0 or 1)
     sh:send("deckGlare", GbcLight.glareAmount())
     sh:send("deckShimmer", GbcLight.shimmerAmount())
+    local tr, tg, tb = GbcLight.glareTint()
+    sh:send("deckGlareTint", { tr, tg, tb })
     -- Only a DIFFERENT canvas counts as a clean frame. When nothing ran ahead
     -- of us `clean` is the very canvas being drawn, and sampling that as a
     -- second texture is both pointless and, on some drivers, a read of the
@@ -398,7 +517,23 @@ end
 -- Sizes are in GAME BOY pixels -- 160x144 -- and scaled up on the way out.
 -- The strip sits right of the value text, which at eight pixels a glyph runs
 -- to about x=72 for the longest label here.
-local SWATCH_W, SWATCH_H, SWATCH_X = 7, 6, 88
+-- Sized to the LONGEST palette on any row, not to the first one written.
+--
+-- The strip starts after the value text and must end inside the 160px screen,
+-- so the arithmetic that matters is SWATCH_X + n*(SWATCH_W+1) <= 160. At the
+-- original 7px from x=88 that allowed nine, and GLOW COLOUR now offers
+-- fifteen -- the strip ran 48px off the side of the screen, invisible in
+-- source and obvious on hardware, which is the same failure mode as the
+-- SELECT hint that overran once already.
+--
+-- 5px from x=82 gives (160-82)/6 = 13... so 4px at pitch 5 from x=80 fits
+-- sixteen with two to spare. The value labels on the rows that carry a strip
+-- are at most six glyphs ("VIOLET"), ending at 24+48 = 72, so 80 clears them.
+local SWATCH_W, SWATCH_H, SWATCH_X = 4, 6, 80
+local SWATCH_PITCH = 5
+-- published so the test suite can assert the strip fits rather than eyeball it
+GbcLight.SWATCH_W, GbcLight.SWATCH_X = SWATCH_W, SWATCH_X
+GbcLight.SWATCH_PITCH = SWATCH_PITCH
 local GB_W, GB_H = 160, 144
 
 -- Drawn INTO the canvas on its way in, not over the finished frame.
@@ -440,13 +575,17 @@ local function drawSwatches(canvas, pixelScale)
   local okDraw = pcall(function()
     g.setCanvas(canvas)
     for i, name in ipairs(req.values) do
-      local x = SWATCH_X + (i - 1) * (SWATCH_W + 1)
+      local x = SWATCH_X + (i - 1) * SWATCH_PITCH
       -- a black frame, because WHITE against the menu's light background is
       -- otherwise an invisible swatch in the middle of the strip
       g.setColor(0, 0, 0, 1)
       g.rectangle("fill", offX + (x - 1) * ps, offY + (y - 1) * ps,
                   (SWATCH_W + 2) * ps, (SWATCH_H + 2) * ps)
-      local c = CrtBeam.GLOWCOL[name] or { 1, 1, 1 }
+      -- The palette comes WITH the request, so a second row of colours does
+      -- not have to be a second copy of this function. GLOW COLOUR omits it
+      -- and gets the tube palette it always had.
+      local palette = req.palette or CrtBeam.GLOWCOL
+      local c = palette[name] or { 1, 1, 1 }
       -- Scaled so the brightest channel is full, NOT normalised by luma the
       -- way the shader does it. The shader is answering "how much light does
       -- this add", which must not change with hue; a swatch is answering
@@ -502,6 +641,25 @@ function GbcLight.install()
       if okRf and Rf and Rf.wanted() then return true end
       local okB, Beam = pcall(V.require, "CrtBeam")
       if okB and Beam and Beam.wanted() then return true end
+      -- ...and the GBC panel pass, which is a frame pass in exactly the way
+      -- TV/RF is: without this its rows would set values that never reach a
+      -- frame while GBC FX is held off, which is precisely the situation
+      -- (the 3D mod) the pass is most likely to be used in.
+      -- ...and all of it is behind the SCREEN FX master, so with that off
+      -- none of these rows claim the pass.
+      local okFx, S = pcall(function() return V.require("Settings") end)
+      local fxOn = true
+      if okFx and S and S.screenFxOn then
+        local okV, on = pcall(S.screenFxOn)
+        if okV then fxOn = on end
+      end
+      if not fxOn then return stockActive(...) end
+      local okP, Pt = pcall(V.require, "PixelTrans")
+      if okP and Pt and Pt.wanted() then return true end
+      local okG, Gh = pcall(V.require, "Ghost")
+      if okG and Gh and Gh.wanted() then return true end
+      local okD, Dp = pcall(V.require, "DmgPanel")
+      if okD and Dp and Dp.wanted() then return true end
     end
     return stockActive(...)
   end

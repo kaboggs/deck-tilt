@@ -554,14 +554,32 @@ CrtBeam.GLOW   = { off = 0, low = 0.5, normal = 1.0, high = 2.0 }
 --
 -- WHITE is the P22 colour set with no tint at all, and is the default: it is
 -- the one that changes nothing.
+-- Two families, and the row walks from one into the other.
+--
+-- WHITE through 5500K are the WHITES a tube actually left the factory at --
+-- the choice a set really had, and the reason two period-correct monitors
+-- look different from each other. Everything after AMBER is a single-colour
+-- tube: those were monitors rather than televisions, and they are here
+-- because the row is also the only place in this mod to pick a phosphor.
+--
+-- Values are relative gains, not colours: the shader normalises by luma so
+-- the row changes hue and not how bright the glow is.
 CrtBeam.GLOWCOL = {
   white  = { 1.00, 1.00, 1.00 },
-  k9300  = { 0.86, 0.94, 1.20 },
-  k7500  = { 0.93, 0.97, 1.10 },
-  k5500  = { 1.12, 0.99, 0.80 },
-  amber  = { 1.20, 0.80, 0.28 },
-  green  = { 0.40, 1.25, 0.55 },
-  blue   = { 0.55, 0.75, 1.30 },
+  k9300  = { 0.86, 0.94, 1.20 },  -- the cold blue-white of a Japanese set
+  k7500  = { 0.93, 0.97, 1.10 },  -- studio monitor
+  k6500  = { 1.00, 1.00, 1.00 },  -- D65, the broadcast standard
+  k5500  = { 1.12, 0.99, 0.80 },  -- a warm or well-used set
+  k4200  = { 1.22, 0.96, 0.68 },  -- an old set well past its best
+  amber  = { 1.20, 0.80, 0.28 },  -- P3 amber, the terminal phosphor
+  gold   = { 1.22, 0.95, 0.42 },
+  green  = { 0.40, 1.25, 0.55 },  -- P1, the oscilloscope green
+  mint   = { 0.62, 1.22, 0.85 },
+  cyan   = { 0.45, 1.05, 1.25 },
+  blue   = { 0.55, 0.75, 1.30 },  -- P11
+  violet = { 0.85, 0.62, 1.30 },
+  pink   = { 1.25, 0.72, 0.95 },
+  red    = { 1.30, 0.52, 0.42 },
 }
 -- NORMAL is the famicom RF reference's own vignette coefficient, so it means
 -- "as much as the measured hardware" rather than "as much as looked nice".
@@ -656,7 +674,19 @@ function CrtBeam.glowColour(name)
       or CrtBeam.GLOWCOL.white
 end
 
+-- Every picture pass answers `false` here while the SCREEN FX master row is
+-- off. The gate lives in wanted() rather than only in the chain that calls
+-- apply(), so there is ONE answer to "does this pass run" and a caller
+-- reaching for a pass directly cannot slip past the master.
+local function fxOff()
+  local ok, S = pcall(function() return V.require("Settings") end)
+  if not ok or not S or not S.screenFxOn then return false end
+  local okV, on = pcall(S.screenFxOn)
+  return okV and not on
+end
+
 function CrtBeam.wanted()
+  if fxOff() then return false end
   return CrtBeam.maskKind() > 0
       or amount(CrtBeam.SCAN, Settings.beamscan, "off") > 0
       or amount(CrtBeam.GLOW, Settings.beamglow, "off") > 0

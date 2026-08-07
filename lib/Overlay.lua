@@ -37,6 +37,10 @@ extern vec2 deckLight;
 extern vec2 deckShadowOff;
 extern number deckShadowAmt;
 extern number deckGlare;
+// The colour of the glare, pre-normalised to unit luma on the Lua side so a
+// hue never changes how BRIGHT the reflection is -- only what colour it is.
+// (1,1,1) is white, which is what this always was.
+extern vec3 deckGlareTint;
 extern number deckShimmer;
 // The frame as it was BEFORE the TV/RF and CRT passes ran, and whether there
 // is one. See the shadow block for why the shadow must be cast from this and
@@ -350,7 +354,7 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 pc)
     if (deckGlare > 0.0) {
         float g = GLARE_INTENSITY
                 * exp(-d * d / (2.0 * GLARE_SIGMA * GLARE_SIGMA));
-        col += vec3(g * deckGlare);
+        col += deckGlareTint * (g * deckGlare);
     }
 
     return vec4(col, src.a) * color;
