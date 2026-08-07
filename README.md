@@ -18,6 +18,9 @@ engine file.
 - A Steam Deck. The motion part needs one. The screen effects do not.
 - LOVE 11.5. The recomp already includes it.
 
+Tested against the engine's `main` branch and the mod versions listed in
+[docs/compatibility.md](docs/compatibility.md).
+
 You supply your own game files. This mod contains none.
 
 ---

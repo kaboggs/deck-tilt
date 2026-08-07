@@ -1,5 +1,31 @@
 # Versions and other mods
 
+## Confirmed against
+
+Deck Tilt 0.7.0 was tested on a Steam Deck with LOVE 11.5, on Red, Blue and
+Yellow, alongside these versions:
+
+| | |
+| --- | --- |
+| Engine | `bryanthaboi/gen1recomp`, `main` |
+| Dramatic Shape Voxel Mod | 1.7.0 |
+| Wilds of Kanto | 1.9.0 |
+| All Pokemon Catchable 151 | 0.3.3-beta |
+| Quality of Life | 1.2.6 |
+| Useful Bag | 2.4.1 |
+| Gen 3 Box | 1.5.2 |
+| Multiple Save Slots | 1.0.0 |
+| Access PC Anywhere | 1.0.1 |
+| Controller Rumble | 1.0.3 |
+| Run Mode | 1.2.0 |
+| Kanto in First Person | 1.40.1 |
+
+Every mod above loaded clean beside this one. Nothing here depends on any of
+them.
+
+Update this table whenever the shader passes change, and say what the new
+work was tested against.
+
 ## Engine
 
 The mod needs `game/src/render/GBCFX.lua`. It reads that shader's text,
