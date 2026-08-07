@@ -817,10 +817,11 @@ do
     prev = lum
   end
 
-  -- an id stored by an earlier build must still resolve, or choosing the
-  -- palette once and updating would quietly switch it back off
-  T.eq(DmgPalette.ALIASES.brickboy, "realdmg",
-    "a value stored under the old id still finds its palette")
+  -- the alias table exists so a renamed id can still resolve; an
+  -- unrecognised value falls back to the default and would silently switch
+  -- somebody's palette off
+  T.check(type(DmgPalette.ALIASES) == "table",
+    "there is somewhere to map a renamed id, if one is ever renamed")
 
   local was = Settings.dmgpal.index
   local function set(v) Settings.dmgpal.index = nil; Settings.dmgpal:sync(v) end

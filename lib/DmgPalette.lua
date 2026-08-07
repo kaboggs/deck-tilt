@@ -92,10 +92,12 @@ function DmgPalette.install()
   return true
 end
 
--- Values stored by an earlier build, mapped to the id they are now called.
--- Dropping this would read an unrecognised value, fall back to the default,
--- and silently switch the palette off for anyone who had chosen it.
-DmgPalette.ALIASES = { brickboy = "realdmg" }
+-- Ids stored by an earlier build, mapped to what they are called now. Empty:
+-- this row did not exist in any released version, so nothing is stored under
+-- an older name. Kept as the place to put one if that ever changes, because
+-- an unrecognised value falls back to the default and would silently switch
+-- somebody's palette off.
+DmgPalette.ALIASES = {}
 
 -- Write `name`'s colours in, or the engine's own back when it is nil/off.
 local function write(name)
