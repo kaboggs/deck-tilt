@@ -181,7 +181,10 @@ local function ensure(w, h)
     if not ok or not made then failed = true return false end
     shader = made
   end
-  if not stateA or select(1, stateA:getDimensions()) ~= w then
+  -- BOTH dimensions. Checking only the width would reuse a wrong-sized pair
+  -- after a resize that changed the height alone -- a letterbox change does
+  -- exactly that.
+  if not stateA or stateA:getWidth() ~= w or stateA:getHeight() ~= h then
     local okA, a = pcall(love.graphics.newCanvas, w, h)
     local okB, b = pcall(love.graphics.newCanvas, w, h)
     if not (okA and okB and a and b) then failed = true return false end

@@ -256,6 +256,31 @@ DmgPanel.SHADER_SRC = SHADER_SRC
 
 local shader, failed = nil, false
 
+-- ------- the output canvas is allocated ONCE and reused
+--
+-- The first version of this called love.graphics.newCanvas every frame. At
+-- the measured 1024x722 that is about three megabytes a frame and a hundred
+-- and eighty a second, and LOVE's collector does not keep up with GPU-backed
+-- canvases: memory climbed until the kernel's OOM killer took the game --
+-- `love invoked oom-killer`, total-vm 2.9 GB, with no Lua error to find
+-- afterwards because the process was killed rather than faulted.
+--
+-- Every other pass in this chain already did it this way (see RfTv.buffer).
+-- This one is the same shape: keep the canvas, and only make a new one when
+-- the size actually changes.
+local target = nil
+
+local function buffer(w, h)
+  if target and target:getWidth() == w and target:getHeight() == h then
+    return target
+  end
+  if not (love.graphics and love.graphics.newCanvas) then return nil end
+  local ok, made = pcall(love.graphics.newCanvas, w, h)
+  if not ok or not made then return nil end
+  target = made
+  return target
+end
+
 local function setting(key)
   local ok, S = pcall(function() return V.require("Settings") end)
   if not ok or not S or not S[key] then return nil end
@@ -323,7 +348,8 @@ function DmgPanel.apply(canvas, pixelScale, lx, ly)
     if len > 1e-4 then dx, dy = vx / len, vy / len end
   end
 
-  local out = love.graphics.newCanvas(w, h)
+  local out = buffer(w, h)
+  if not out then return nil end
   local prev = love.graphics.getCanvas()
   local okRun = pcall(function()
     love.graphics.setCanvas(out)

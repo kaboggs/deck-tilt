@@ -484,6 +484,36 @@ do
   for _, k in ipairs(rows) do Settings[k].index = saved[k] end
 end
 
+-- ------- no pass may allocate a canvas per frame
+--
+-- DmgPanel called love.graphics.newCanvas on every frame. At the measured
+-- 1024x722 that is about three megabytes a frame and a hundred and eighty a
+-- second, and LOVE's collector does not keep up with GPU-backed canvases:
+-- memory climbed until the kernel's OOM killer took the game. There was no
+-- Lua error to find afterwards, because the process was killed rather than
+-- faulted -- which is the worst kind of bug to have to diagnose.
+--
+-- Checked in the SOURCE rather than at runtime, because the harness has no
+-- GPU and would never allocate anything. Every pass must hold its canvas in
+-- an upvalue and guard it by BOTH dimensions.
+do
+  local PASSES = { "DmgPanel", "Ghost", "PixelTrans", "RfTv", "CrtBeam" }
+  for _, name in ipairs(PASSES) do
+    local f = io.open(MOD_PATH .. "/lib/" .. name .. ".lua")
+    T.check(f ~= nil, name .. " is readable")
+    if f then
+      local src = f:read("*a"); f:close()
+      if src:find("newCanvas", 1, true) then
+        T.check(src:find("getWidth%(%) ~= w") or src:find("getWidth%(%) == w"),
+          name .. " guards its canvas on WIDTH before allocating another")
+        T.check(src:find("getHeight%(%) ~= h") or src:find("getHeight%(%) == h"),
+          name .. " guards it on HEIGHT too -- a letterbox change moves only "
+          .. "that, and a width-only guard reuses a wrong-sized buffer")
+      end
+    end
+  end
+end
+
 -- ------- the reflector grain, in the bands that read
 --
 -- The reference measured three bands in the sheet -- about half a dot, one to
