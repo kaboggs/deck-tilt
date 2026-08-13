@@ -301,9 +301,16 @@ Settings.pt = Setting.new("pt", "GBC SCREEN",
   { "OFF", "WHITES", "BRIGHT", "ALL" },
   "Shows the picture as the screen of a Game Boy Color. That screen has no "
   .. "light of its own, so its light pixels are not white. They are clear, "
-  .. "and you see the plate behind the screen through them. WHITES makes "
-  .. "only the white pixels clear. BRIGHT makes each pixel clear by how "
-  .. "bright it is, which is the way the original effect ships. ALL makes "
+  .. "and you see the plate behind the screen through them. "
+  .. "WHITES makes only the white pixels clear. Every white part of the "
+  .. "picture then reads as a window onto the plate. The white belly of a "
+  .. "sprite, a white speech box or a white wall all show the plate, the "
+  .. "grain on it, and the shadow the dark pixels drop on it. That is meant "
+  .. "to happen, and it is what the real screen did, but it can look like a "
+  .. "sprite has a mark on it. Turn LCD SHADOW down to weaken the shadow "
+  .. "inside those white areas, or SEE-THROUGH down to show less plate. "
+  .. "BRIGHT makes each pixel clear by how bright it is, which is the way "
+  .. "the original effect ships. ALL makes "
   .. "every pixel a little clear. OFF removes the effect, and the rows "
   .. "below it then do nothing. The curved screen and the scan lines of the "
   .. "TV pages are drawn over this effect, so they bend it with the glass.",
@@ -359,13 +366,29 @@ Settings.ptlight = Setting.new("ptlight", "ROOM LIGHT",
   .. "appears in strong light.",
   "normal")
 
+-- Six rungs, four of them below the reference's own NORMAL.
+--
+-- TRACE and FAINT were added under SOFT because SOFT was the floor and it
+-- was still too dark: this shadow lands on the plate, and in WHITES mode the
+-- plate is what a white part of a sprite is made of, so the shadow appears
+-- INSIDE white shapes and reads as a stain rather than as depth. See the
+-- note on PixelTrans.SHADOW for why the rungs went on this ladder instead of
+-- onto a second row, and for the numbers.
 Settings.ptshadow = Setting.new("ptshadow", "LCD SHADOW",
-  { "off", "soft", "normal", "deep" }, { "OFF", "SOFT", "NORMAL", "DEEP" },
-  "The dark pixels of the screen sit a small distance above the plate, so "
-  .. "they put a soft shadow on it. The shadow moves away from the light "
-  .. "when you tilt the console. When the motion sensor is off, the shadow "
-  .. "keeps one position. NORMAL is the darkness the original effect uses. "
-  .. "OFF removes the shadow. This row does nothing while GBC SCREEN is OFF.",
+  { "off", "trace", "faint", "soft", "normal", "deep" },
+  { "OFF", "TRACE", "FAINT", "SOFT", "NORMAL", "DEEP" },
+  "The dark pixels of the screen sit a little above the plate, so they drop "
+  .. "a soft shadow onto it. You see the plate through the clear pixels, so "
+  .. "this shadow also shows up INSIDE the white parts of a picture and not "
+  .. "only around them. The shadow moves away from the light when you tilt "
+  .. "the console. When the motion sensor is off, it keeps one position. "
+  .. "Turn this row down for a flatter, cleaner plate and for white shapes "
+  .. "with nothing showing through them. Turn it up and the dark shapes look "
+  .. "like they float well above the plate. DEEP is the darkest. NORMAL is "
+  .. "the darkness the original effect uses. SOFT is lighter than that. "
+  .. "FAINT and TRACE are lighter again, and TRACE is about one tenth of "
+  .. "DEEP, for a shadow you can only just find. OFF removes it. This row "
+  .. "does nothing while GBC SCREEN is OFF.",
   "normal")
 
 Settings.ptrainbow = Setting.new("ptrainbow", "RAINBOW",

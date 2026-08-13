@@ -443,7 +443,30 @@ PixelTrans.MODE = { whites = 0, bright = 1, all = 2 }
 -- NORMAL is the model's shipped default in every ladder below, so the
 -- row means "as the original effect" rather than "as looked nice here".
 PixelTrans.ALPHA   = { low = 0.10, normal = 0.20, high = 0.35, max = 0.55 }
-PixelTrans.SHADOW  = { off = 0, soft = 0.30, normal = 0.50, deep = 0.75 }
+-- The LCD shadow's ladder gained TRACE and FAINT at the quiet end.
+--
+-- The row was reported as too strong at every rung it had: the shadow the
+-- pixel layer drops on the plate is the thing you see THROUGH a white pixel
+-- in WHITES mode, so on a sprite with a large white area it reads as a stain
+-- inside the sprite rather than as depth under it. SOFT, the mildest rung
+-- above OFF, was 0.30 -- a 24% darkening of the plate -- and the only step
+-- below it was straight to nothing.
+--
+-- Two rungs were added rather than a second "intensity" row. The opacity is
+-- ONE number; a row that scaled another row's number would be two rows
+-- disagreeing about one value, which is the exact fault shadowFor's comment
+-- below refuses for the shadow's DIRECTION. The mod already fixes a
+-- too-strong ladder by adding quiet rungs to it -- see FAINT and LIGHT in
+-- Settings' rumble POWER table, added for the same complaint -- so this is
+-- the pattern that is already here.
+--
+-- The ratios are kept near-constant so the ladder reads evenly all the way
+-- down: 0.08 -> 0.16 -> 0.30 -> 0.50 -> 0.75 steps by roughly 2, 1.9, 1.7
+-- and 1.5. TRACE darkens the plate by about 6%, against DEEP's 60%, and the
+-- rungs that existed keep the numbers they had -- so a stored `deep`,
+-- `normal` or `soft` looks exactly as it did before this was added.
+PixelTrans.SHADOW  = { off = 0, trace = 0.08, faint = 0.16,
+                       soft = 0.30, normal = 0.50, deep = 0.75 }
 PixelTrans.RAINBOW = { off = 0, subtle = 0.08, normal = 0.15,
                        strong = 0.30, max = 0.50 }
 PixelTrans.SPREAD  = { wide = 1.0, normal = 1.8, fine = 2.6, finest = 3.4 }

@@ -19,13 +19,21 @@ gives back hard white instead. This puts the plate back.
 | `SEE-THROUGH` | How see-through they are. |
 | `BACKING` | The colour of the plate. Shown as colours beside the row. |
 | `SHEET GRAIN` | How rough the plate looks. It is pressed material, not a mirror. |
-| `LCD SHADOW` | The shadow the pixel layer drops onto the plate. |
+| `LCD SHADOW` | The shadow the pixel layer drops onto the plate. `OFF`, then five steps from `TRACE` to `DEEP`. |
 | `RAINBOW`, `RAINBOW BANDS` | The rainbow in strong light, and how fine its rings are. |
 | `FILM MARKS` | The film is uneven, so the rings bend. Changes the rainbow only. |
 
 The rainbow is real: the film shifts light by a quarter wave at one colour and
 not the others, and the mismatch leaks through as colour that changes with
 angle. It moves when you tilt.
+
+**`WHITES` turns white shapes into windows.** On `WHITES` the plate is what a
+white part of the picture is *made of* — a sprite's white belly, a speech box,
+a white wall. So the plate's grain, and the shadow the dark pixels drop on it,
+appear *inside* those shapes as well as around them. That is the hardware, not
+a bug in a sprite. `LCD SHADOW` turns down what shows through: below the old
+floor of `SOFT` there are now `FAINT` and `TRACE`, and `TRACE` is about a tenth
+of `DEEP`. `SEE-THROUGH` shows less plate in the first place.
 
 ## DMG PANEL
 

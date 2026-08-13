@@ -2267,7 +2267,7 @@ do
   T.eq(Pt.SPLOTCH.normal, 0.5, "FILM MARKS NORMAL is the reference's 0.5")
   for _, pair in ipairs({
     { Pt.ALPHA,   { "low", "normal", "high", "max" } },
-    { Pt.SHADOW,  { "off", "soft", "normal", "deep" } },
+    { Pt.SHADOW,  { "off", "trace", "faint", "soft", "normal", "deep" } },
     { Pt.RAINBOW, { "off", "subtle", "normal", "strong", "max" } },
     { Pt.SPREAD,  { "wide", "normal", "fine", "finest" } },
     { Pt.SPLOTCH, { "off", "low", "normal", "high" } },
@@ -2280,6 +2280,83 @@ do
       T.check(map[order[i]] > map[order[i - 1]],
         ("panel rung %s is above %s"):format(order[i], order[i - 1]))
     end
+  end
+
+  -- ---- the LCD SHADOW row reaches further down than it used to ----
+  --
+  -- The row was reported as too strong at every rung it had, because in
+  -- WHITES mode this shadow falls on the plate and the plate is what a white
+  -- part of a sprite is MADE of -- so it reads as a stain inside the shape.
+  -- TRACE and FAINT were added below SOFT for that. What is asserted here is
+  -- the whole contract of that change:
+  --
+  --   a) the row and the ladder agree, in both directions.  A row value with
+  --      no rung does not fail loudly: shadowFor falls back to NORMAL, so the
+  --      row would silently jump DARKER at the rung meant to be lightest.
+  --   b) left is always weaker than right, so the row reads as a dial.
+  --   c) the rungs that already existed keep the exact numbers they had, so
+  --      a saved `deep`, `normal` or `soft` looks exactly as it did before.
+  --   d) the new floor is genuinely lower, and still not OFF in disguise.
+  do
+    local row = Settings.ptshadow
+    local rungs = 0
+    for _ in pairs(Pt.SHADOW) do rungs = rungs + 1 end
+    T.eq(rungs, #row.values,
+      "every LCD SHADOW rung is on the row and every row value has a rung")
+    T.eq(#row.values, #row.labels, "and every value has a label")
+    for i, v in ipairs(row.values) do
+      T.check(Pt.SHADOW[v] ~= nil,
+        ("LCD SHADOW value %s has an opacity, so it cannot fall back to "
+         .. "NORMAL and jump darker"):format(v))
+      if i > 1 then
+        T.check(Pt.SHADOW[v] > Pt.SHADOW[row.values[i - 1]],
+          ("the row is ordered: %s is darker than %s")
+            :format(v, row.values[i - 1]))
+      end
+    end
+
+    -- (c) the numbers a player already has stored, pinned.
+    T.eq(Pt.SHADOW.off, 0, "OFF is still nothing at all")
+    T.eq(Pt.SHADOW.soft, 0.30, "SOFT still means what it meant")
+    T.eq(Pt.SHADOW.normal, 0.50, "NORMAL still means what it meant")
+    T.eq(Pt.SHADOW.deep, 0.75, "DEEP still means what it meant")
+    T.eq(row:schema().default, "normal", "and the row still defaults to NORMAL")
+
+    -- (d) SOFT used to be the floor above OFF. The point of the change is
+    -- that there is now a real distance below it.
+    T.check(Pt.SHADOW.trace < Pt.SHADOW.soft / 3,
+      ("TRACE (%.2f) is well under the old floor of SOFT (%.2f)")
+        :format(Pt.SHADOW.trace, Pt.SHADOW.soft))
+
+    -- ...and not so far under it that the rung is OFF wearing another name.
+    -- The shader mixes the plate towards plate * SHADOW_FLOOR, so a rung
+    -- moves the reference plate by (1 - SHADOW_FLOOR) * rung * plate.
+    local FLOOR, PLATE = 0.2, 0.48
+    local levels = (1 - FLOOR) * Pt.SHADOW.trace * PLATE * 255
+    T.check(levels >= 3,
+      ("TRACE still darkens the plate by %.1f of 255 levels, so it is a "
+       .. "shadow and not OFF"):format(levels))
+    T.check(Pt.SHADER_SRC:find("#define SHADOW_FLOOR 0.2", 1, true) ~= nil,
+      "and the shader still floors the shadow where that sum assumes")
+  end
+
+  -- ---- the help says the thing that surprised a player ----
+  --
+  -- WHITES turning a sprite's white belly into a window onto the plate is the
+  -- effect working exactly as designed, and it was reported as a sprite bug.
+  -- Help text is where that should have been said, so it is asserted here
+  -- rather than left to a good intention: the master row has to name what
+  -- WHITES does to a white shape AND point at the row that turns down what
+  -- shows through it.
+  do
+    local h = Settings.pt.help
+    T.check(h:find("WHITES", 1, true), "GBC SCREEN help names the WHITES rung")
+    T.check(h:find("window", 1, true),
+      "and says a white part of the picture reads as a window onto the plate")
+    T.check(h:find("LCD SHADOW", 1, true),
+      "and points at the row that weakens what shows through it")
+    T.check(Settings.ptshadow.help:find("INSIDE", 1, true),
+      "and LCD SHADOW says its shadow lands inside white shapes too")
   end
 
   -- ---- white detection ----

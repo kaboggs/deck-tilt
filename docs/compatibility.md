@@ -2,7 +2,7 @@
 
 ## Confirmed against
 
-Deck Tilt 0.7.0 was tested on a Steam Deck with LOVE 11.5, on Red, Blue and
+Deck Tilt 0.7.1 was tested on a Steam Deck with LOVE 11.5, on Red, Blue and
 Yellow, alongside these versions:
 
 | | |
