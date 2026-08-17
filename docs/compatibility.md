@@ -2,7 +2,7 @@
 
 ## Confirmed against
 
-Deck Tilt 0.7.1 was tested on a Steam Deck with LOVE 11.5, on Red, Blue and
+Deck Tilt 0.7.2 was tested on a Steam Deck with LOVE 11.5, on Red, Blue and
 Yellow, alongside these versions:
 
 | | |
@@ -25,6 +25,11 @@ them.
 
 Update this table whenever the shader passes change, and say what the new
 work was tested against.
+
+0.7.2 changed one pass, `CRT TUBE`. The mask is now drawn by coverage rather
+than by a hard edge, `SHADOW` and `DOT` sit on a real delta lattice, and there
+is a new `CRT ROTATE` row. The numbers in that work were measured from
+rendered output at every pitch rung; none of the mods above changed.
 
 ## Engine
 

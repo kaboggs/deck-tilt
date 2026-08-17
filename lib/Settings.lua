@@ -611,6 +611,24 @@ Settings.beammaskpitch = Setting.new("beammaskpitch", "CRT PITCH",
   .. "nothing while CRT MASK is OFF.",
   "normal")
 
+-- A test row rather than a taste row. See the note over CrtBeam.ROT for why
+-- this console in particular is the one that needs it: its panel is portrait
+-- glass turned sideways, so the alignment between an upright phosphor stripe
+-- and the screen's own subpixels that other displays get for free is lost
+-- here by exactly this quarter turn.
+Settings.beamrot = Setting.new("beamrot", "CRT ROTATE",
+  { "off", "on" }, { "OFF", "90 DEG" },
+  "Lays the tube on its side: the stripes or dots turn a quarter turn, and "
+  .. "the lines of the beam turn with them. This is here to test your "
+  .. "screen, not to look right. A real tube is OFF, and OFF is the "
+  .. "default. Turn it ON and look closely at the pattern: if it suddenly "
+  .. "looks cleaner and more even than it does OFF, then what you were "
+  .. "seeing is this screen's own coloured stripes fighting the pattern, "
+  .. "and not the pattern itself. This screen is a tall panel mounted "
+  .. "sideways, which is why that can happen here and not on a television. "
+  .. "Leave it OFF unless you are comparing the two.",
+  "off")
+
 Settings.beamscan = Setting.new("beamscan", "CRT BEAM",
   { "off", "low", "normal", "high" }, { "OFF", "LOW", "NORMAL", "HIGH" },
   "How much the lines of the tube change width with the picture. A bright "
@@ -1031,7 +1049,8 @@ Settings.groups = {
       .. "stripes or dots on the glass, the glow around bright areas, the "
       .. "darkening at the edges, and the beam that draws each line. Every "
       .. "row here is OFF until you turn it on.",
-    rows = { Settings.beammask, Settings.beammaskpitch, Settings.beamscan,
+    rows = { Settings.beammask, Settings.beammaskpitch, Settings.beamrot,
+             Settings.beamscan,
              Settings.beamglow, Settings.beamglowcol,
              Settings.beamedge, Settings.beamedgesoft, Settings.beamroll } },
 

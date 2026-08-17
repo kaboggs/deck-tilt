@@ -42,7 +42,15 @@
 -- Three geometries, which is what the glass actually was:
 --   GRILLE  vertical RGB stripes, uninterrupted (Trinitron)
 --   SLOT    stripes broken into staggered slots, offset every other row
---   SHADOW  a triad of round dots on a hex lattice
+--   SHADOW  triads on a delta lattice, the colour advancing one hole per row
+--           so a given phosphor runs diagonally
+--
+-- What is simulated is the LATTICE -- triad pitch, row pitch, the diagonal
+-- advance, the steel between rows -- and not the outline of any one hole.
+-- That is a limit of the screen rather than a shortcut: at NORMAL a hole is
+-- one screen pixel across, so its shape is below the grid and there is
+-- nothing there to draw.  Everything the eye can actually read at this scale
+-- is in the lattice, and every number in it comes from the real geometry.
 --
 -- Megatron's contribution is not the geometry, it is the ORDER.  A mask
 -- multiplies two thirds of the picture towards black, so applying it to an
@@ -101,6 +109,7 @@ extern number beamMask;     // 0 off, 1 grille, 2 slot, 3 shadow,
                             // 4 pvm, 5 trinitron, 6 dot
 extern number beamMaskAmt;
 extern number beamPitch;    // triad pitch in SCREEN pixels
+extern number beamRot;      // 1 = lay the tube on its side (mask + beam only)
 extern number beamMono;     // 1 = black and white
 extern number beamSat;      // saturation, 1 = unchanged
 extern number beamContrast; // contrast, 1 = unchanged
@@ -216,6 +225,201 @@ float edgeFall(vec2 tcIn, float amt, float k, float soft)
     return max(0.0, vig * roll);
 }
 
+// ---- one phosphor stripe, drawn by COVERAGE rather than by a hard edge ----
+//
+// `s` is the position across a triad in thirds (0..3); `centre` and `halfW`
+// are the stripe's own, and `aa` is half a SCREEN pixel in those same units.
+//
+// A hard step() asks "is this pixel's CENTRE inside the stripe", which is
+// only the right question while a stripe is at least a pixel wide and lands
+// on the grid. It is not, at three of the four rungs on the pitch ladder:
+//
+//   FINE (2px triad)  0.67px per stripe. Measured, GRILLE and SLOT lost the
+//                     GREEN stripe outright -- R and B came out at 1.39 of
+//                     the mean and G at 0.22. That is not a fine mask, it is
+//                     a magenta cast over the whole picture.
+//   WIDE (4.5px)      not a whole number of pixels per triad, so the three
+//                     stripes sample unevenly: R 1.20, G 0.82.
+//   PVM, every rung   its 22% guard band is under a quarter of a pixel wide
+//                     and never landed on a pixel centre at ANY pitch, so
+//                     the black glass the rung exists for was never drawn.
+//                     All the 3/GUARD renormalisation did was make PVM 22%
+//                     brighter than GRILLE in linear light -- the opposite
+//                     of the deep picture it is named for.
+//
+// Coverage answers "how MUCH of this pixel is inside the stripe", which is
+// the question a mask finer than the panel actually poses, and it is the
+// only answer that keeps the three channels in balance at a pitch that is
+// not a whole number of pixels. The wrap keeps the stripe that straddles the
+// triad boundary whole.
+//
+// This is the exact overlap of two boxes -- the stripe, half-width `halfW`,
+// and the pixel's own footprint, half-width `aa` -- whose centres are `d`
+// apart. Not an approximation of it, and not a smoothstep: at FINE, where
+// three stripes fall on two pixels, the exact form puts all three channels
+// dead level, while a smoothstep leaves green at 0.52 against red and blue at
+// 0.74 -- still a magenta cast, just milder than the hard step's.
+//
+// The `2*min(halfW, aa)` ceiling is the part that is easy to get wrong and
+// was: a plain ramp is exact only while the pixel is NARROWER than the
+// stripe, so it holds for the four full-width rungs and fails for PVM, whose
+// stripes are 0.78 of a pixel. Without the ceiling a pixel sitting on a PVM
+// stripe reads 0.89 coverage where the true answer is 0.78, and the rung came
+// out 12% bright with the guard band it was supposed to be paying for.
+float stripe(float s, float centre, float halfW, float aa)
+{
+    float d = abs(s - centre);
+    d = min(d, 3.0 - d);
+    return clamp(halfW + aa - d, 0.0, 2.0 * min(halfW, aa)) / (2.0 * aa);
+}
+
+// ---- one phosphor hole, on the lattice a delta mask actually has ----
+//
+// Round holes spaced `a` apart along a row, rows spaced a*sqrt(3)/2 apart and
+// offset by half a hole, and the colour advancing one step per row so the
+// triads run as DIAGONALS -- which is the visible difference between a shadow
+// mask and an aperture grille, and the thing that makes it read as dots
+// rather than as stripes with something done to them.  A triad is three
+// holes, so the colour pattern repeats every 3a across and every three rows
+// down -- 3 * a*sqrt(3)/2 = 2.6a -- which makes the colour cell very nearly
+// square.  Both periods fall out of the one number; neither is chosen.
+//
+// PITCH here names the HOLE and not the triad, which is the one place this
+// departs from the stripe rungs, and it is a resolution limit rather than a
+// preference.  A stripe is one-dimensional: at NORMAL each of the three is
+// exactly one screen pixel wide and lands on the grid, so a 3px triad draws
+// perfectly.  A hole needs resolution in BOTH axes, and a 3px triad gives it
+// 1px across and 0.87px down -- below the grid in both, so the lattice beats
+// against the pixels instead of being drawn.  It was measured: with the triad
+// reading, SHADOW and DOT came out as moire with almost no horizontal
+// structure at all, which is the same failure the fix was for.  So the rung
+// buys a hole the same pixels it buys a stripe, and a dot triad is three
+// times the size of a stripe triad at the same rung.  The 1.5 floor is the
+// finest hole that can be drawn round at all.
+//
+// This is where the two dot rungs used to go wrong, and it is the whole of
+// the "rotated ninety degrees" complaint.  The old code took the cell to be
+// `pitch` wide and `pitch*sqrt(3)` TALL -- twice the row spacing it wanted,
+// sqrt(3) where sqrt(3)/2 was meant -- and then measured the dot in CELL
+// FRACTIONS rather than in pixels.  A third of a triad is pitch/3 wide and
+// that cell was 1.732*pitch tall, so a "round" dot came out as an ellipse
+// 5.2x taller than it was wide.  Measured on a flat grey field: the vertical
+// period was 5.0 screen pixels against a horizontal one of 3.0, so the
+// COARSER structure -- the one the eye reads first -- ran the wrong way, and
+// at FINE pitch DOT had a horizontal variation of 1.0 against a vertical one
+// of 14.9, which is horizontal banding and nothing else.  A mask on its side.
+//
+// The fix is both halves and neither alone would do it: the right row
+// spacing, and a radius taken in SCREEN PIXELS so the hole is round at every
+// pitch instead of only at whichever one the cell happened to be square at.
+// The black matrix a mask's holes are punched through: how lit this point is
+// between one ROW of holes and the next. `cy` is the position down a row.
+//
+// A raised cosine, and the shape is load-bearing rather than decorative. Its
+// mean over ANY whole number of evenly spaced samples of a full period is
+// exactly 0.5 -- so `mix(floorLvl, 1.0, matrix())` averages exactly
+// (1+floorLvl)/2 whatever the row height works out to, and one constant
+// normalises the rung at every pitch on the ladder. A smoothstep gap does not
+// have that property: its discrete mean drifts with the row height, so it
+// needs a different normalisation per pitch or the rung changes brightness as
+// you cycle it. Being bandlimited, it also cannot alias, which a step or a
+// smoothstep at these row heights certainly can.
+float matrix(float cy)
+{
+    return 0.5 - 0.5 * cos(2.0 * PI * cy);
+}
+
+// ---- the delta mask: SHADOW and DOT ----
+//
+// A shadow-mask tube's holes sit on a triangular lattice: triads `pitch`
+// apart across, rows pitch*sqrt(3)/2 apart down, and each row's colours
+// advanced by ONE hole, so a given phosphor runs as a DIAGONAL. Those
+// diagonals are what you actually see on a delta tube and they are the
+// reason it does not read as an aperture grille -- they, and not the outline
+// of any one hole, are the thing worth simulating at this scale.
+//
+// The hole is NOT drawn round, and that is honest rather than lazy: at NORMAL
+// a hole is one screen pixel across, so its outline is below the grid and
+// there is nothing there to draw. An earlier attempt at literal round holes
+// had to make the triad three times wider to have somewhere to put them, and
+// a 9px triad is a rainbow checkerboard, not a mask. What survives at one
+// pixel per phosphor is the LATTICE -- triad pitch, row pitch, the diagonal
+// advance, the black matrix -- so that is what this builds.
+//
+// TWO numbers are rounded to whole SCREEN PIXELS, and that rounding is the
+// difference between a mask and a mess:
+//
+//   the ROW HEIGHT, because pitch*sqrt(3)/2 is irrational and a lattice whose
+//   period does not divide the pixel grid beats against it into coarse
+//   diagonal moire that crawls when the picture moves.
+//
+//   the STAGGER, because one hole is 1px at NORMAL but 1.5px at WIDE, and a
+//   half-pixel shift lays every stripe of the shifted row across a pixel
+//   boundary, so that row renders as a 50/50 blend of two phosphors. Measured
+//   on the shipped code, alternate staggered rows came out at 73 colour
+//   purity against 112 for the unshifted ones -- a mask visibly alternating
+//   between crisp and muddy down the screen. Rounding the shift to a whole
+//   pixel costs a few percent of lattice accuracy and buys every row the same
+//   colour, which is a trade worth making every time.
+//
+// Nothing else is quantised. The triad keeps its exact width and the stripes
+// are still drawn by coverage, so a fractional pitch stays smooth instead of
+// stepping to the nearest pixel.
+// The colours advance one hole per row and repeat every third, which is the
+// diagonal. Without that the same phosphor stacks into a column and the whole
+// thing collapses back into an aperture grille.
+float deltaSlot(vec2 px, float pitch, float rowH, float shift)
+{
+    float row = floor(px.y / rowH);
+    return fract((px.x + shift * mod(row, 3.0)) / pitch) * 3.0;
+}
+
+// SHADOW: rows of TRIADS, pitch*sqrt(3)/2 apart -- the coarse mask of a
+// consumer set, where what a screen this size can resolve is the row of
+// triads and the steel between the rows, not the individual hole.
+//
+// Getting the row height right took two goes and the failure is worth
+// keeping. Advancing the colour once per row while ALSO spacing the rows a
+// full triad-height apart triples the vertical period: the colour cell came
+// out pitch wide and 2.6*pitch tall, so every phosphor was a block three
+// times taller than it was wide and WIDEST rendered as a chunky checkerboard
+// of 2x5 pixel blocks. A row and a colour step are the same event and only
+// one of them may set the period.
+vec3 shadowMask(vec2 px, float pitch, float aa)
+{
+    // floor of 2 so the matrix below always has at least two samples in a
+    // row, which is what makes its mean exactly 0.5 and one constant enough
+    float rowH  = max(floor(pitch * 0.8660254 + 0.5), 2.0);
+    float shift = max(floor(pitch / 3.0 + 0.5), 1.0);   // one hole, in pixels
+    float s = deltaSlot(px, pitch, rowH, shift);
+    vec3 m = vec3(stripe(s, 0.5, 0.5, aa),
+                  stripe(s, 1.5, 0.5, aa),
+                  stripe(s, 2.5, 0.5, aa));
+    return m * 3.0 * 1.5385 * mix(0.30, 1.0, matrix(fract(px.y / rowH)));
+}
+
+// DOT: rows of HOLES. A hole is a third of a triad across, so its rows sit
+// sqrt(3)/2 of THAT apart -- three times finer than the triad rows above --
+// and the colours still advance one hole per row, so the triads run on the
+// same diagonal. At NORMAL that is a one-pixel row and a one-pixel hole: a
+// square hole on a true delta lattice, which is as fine as this panel can
+// draw one.
+//
+// No black matrix, and that is the honest reason rather than an omission: at
+// one or two pixels to a row there is nowhere to put steel, and a mask whose
+// matrix is below the grid is a mask that dissolves into COLOUR. Which is
+// exactly what this rung is for, and what separates it from SHADOW.
+vec3 dotMask(vec2 px, float pitch, float aa)
+{
+    float rowH  = max(floor(pitch * 0.2886751 + 0.5), 1.0);
+    float shift = max(floor(pitch / 3.0 + 0.5), 1.0);
+    float s = deltaSlot(px, pitch, rowH, shift);
+    vec3 m = vec3(stripe(s, 0.5, 0.5, aa),
+                  stripe(s, 1.5, 0.5, aa),
+                  stripe(s, 2.5, 0.5, aa));
+    return m * 3.0;
+}
+
 // ---- the phosphor mask ----
 // Returns a per-channel multiplier. Normalised so a full triad averages to
 // 1.0 BEFORE MASK_GAIN, which is what lets the gain mean "how much harder the
@@ -226,45 +430,71 @@ float edgeFall(vec2 tcIn, float amt, float k, float soft)
 // constant because pitch is the single thing that separates one real tube
 // from another -- a BVM and a consumer set can carry the SAME geometry and
 // still look nothing alike, because one has 0.25mm slots and the other 0.8mm.
-vec3 mask(vec2 px, float kind, float pitch)
+// `spanY` is the screen's extent along the mask's OWN vertical axis. It is a
+// parameter rather than love_ScreenSize.y because the tube can be laid on its
+// side (see beamRot): the damper wires are the only thing in here that is
+// placed by a FRACTION of the screen rather than by the pitch, so they are the
+// only thing that has to be told which axis it is measuring.
+vec3 mask(vec2 px, float kind, float pitch, float spanY)
 {
     if (kind < 0.5) return vec3(1.0);
     // (see edgeFall below for the vignette; it is not part of the mask)
 
     float cell = px.x / pitch;
     float slot = fract(cell) * 3.0;      // 0..3 across one RGB triad
+    // half a SCREEN pixel, in those same thirds-of-a-triad units. Every
+    // stripe below is drawn by coverage against this rather than by a step;
+    // see the note on stripe() for the three rungs that were wrong without it.
+    float aa = 1.5 / max(pitch, 1.0);
 
     if (kind < 1.5) {
         // GRILLE: uninterrupted vertical stripes
-        vec3 m = vec3(step(slot, 1.0),
-                      step(1.0, slot) * step(slot, 2.0),
-                      step(2.0, slot));
+        vec3 m = vec3(stripe(slot, 0.5, 0.5, aa),
+                      stripe(slot, 1.5, 0.5, aa),
+                      stripe(slot, 2.5, 0.5, aa));
         return m * 3.0;
     }
     if (kind < 2.5) {
         // SLOT: the same stripes, broken and staggered every other row. The
         // half-triad shift on alternate slot rows is the whole visual
         // signature -- without it this is just GRILLE with gaps.
-        float row = floor(px.y / (pitch * 2.0));
-        float shifted = fract(cell + 0.5 * mod(row, 2.0)) * 3.0;
-        vec3 m = vec3(step(shifted, 1.0),
-                      step(1.0, shifted) * step(shifted, 2.0),
-                      step(2.0, shifted));
-        // the gap between slots, vertically
-        float gap = step(0.12, fract(px.y / (pitch * 2.0) * 2.0));
-        return m * 3.0 * mix(0.55, 1.0, gap);
+        //
+        // The gap used to be `step(0.12, fract(px.y / pitch))`: a HARD edge
+        // 12% into a cell only `pitch` pixels tall -- 0.36 of a pixel at
+        // NORMAL, which never lands on a pixel centre. Measured, SLOT at
+        // NORMAL pitch had ZERO vertical structure; it was GRILLE under
+        // another name, and at WIDEST it was a one-pixel hairline that came
+        // and went with the sampling. Two things were wrong: the gap sat on
+        // the period of the TRIAD (`pitch`) while the stagger sat on the
+        // period of the ROW (`pitch*2`), so they described different lattices,
+        // and a hard step at sub-pixel width cannot be drawn at all. It is now
+        // on the row's own period, a fixed FRACTION of the slot's height, and
+        // feathered so it survives down to FINE without aliasing.
+        // Row height and stagger both in whole SCREEN PIXELS, for the two
+        // reasons set out over deltaMask: an irrational row period beats
+        // against the grid, and a half-pixel shift renders the shifted row as
+        // a 50/50 blend of two phosphors. This rung is where that second one
+        // was measured -- alternate slot rows at 73 colour purity against 112
+        // -- and it is why SLOT looked wrong even once its gaps were drawing.
+        float rowH  = max(floor(pitch * 2.0 + 0.5), 2.0);
+        float shift = max(floor(pitch * 0.5 + 0.5), 1.0);
+        float row = floor(px.y / rowH);
+        float cy  = fract(px.y / rowH);
+        float shifted = fract((px.x + shift * mod(row, 2.0)) / pitch) * 3.0;
+        vec3 m = vec3(stripe(shifted, 0.5, 0.5, aa),
+                      stripe(shifted, 1.5, 0.5, aa),
+                      stripe(shifted, 2.5, 0.5, aa));
+        // the unlit bridge of steel between one slot and the next. 1.4286 is
+        // 2/(1+floor), so breaking the stripe costs CONTRAST and not light --
+        // the same rule the guard band in PVM is normalised by.
+        return m * 3.0 * 1.4286 * mix(0.40, 1.0, matrix(cy));
     }
     if (kind < 3.5) {
-        // SHADOW: round dots on a staggered lattice, which is a hex packing
-        float row = floor(px.y / (pitch * 1.732));
-        vec2 c = vec2(fract(cell + 0.5 * mod(row, 2.0)),
-                      fract(px.y / (pitch * 1.732)));
-        float slot2 = c.x * 3.0;
-        vec3 m = vec3(step(slot2, 1.0),
-                      step(1.0, slot2) * step(slot2, 2.0),
-                      step(2.0, slot2));
-        float d = abs(c.y - 0.5) * 2.0;
-        return m * 3.0 * smoothstep(1.0, 0.35, d);
+        // SHADOW: the delta mask of a consumer set -- a deep black matrix, so
+        // the rows of holes stay readable AS rows and the thing reads as
+        // dots. norm is 2/(1+floor); see matrix() for why one constant is
+        // enough at every pitch.
+        return shadowMask(px, pitch, aa);
     }
     if (kind < 4.5) {
         // PVM: the professional aperture grille. Same stripes as GRILLE, but
@@ -278,10 +508,20 @@ vec3 mask(vec2 px, float kind, float pitch)
         // renormalisation is what keeps a full triad averaging 1.0 before
         // MASK_GAIN, so the guard band costs contrast rather than light --
         // which is the whole point of it.
+        //
+        // Drawn by coverage, not by a step: the band is 0.22 of a stripe and
+        // a stripe is one screen pixel at NORMAL, so a step never saw it at
+        // any rung on the ladder and PVM was simply GRILLE turned up 22%.
+        // The band is split EVENLY either side of each stripe, which is both
+        // what the glass does -- unlit glass surrounds a phosphor, it does not
+        // sit only to its right -- and what keeps the three channels level.
+        // Hung off the left edge (centres at g/2, 1+g/2, 2+g/2) the three
+        // stripes sample asymmetrically against the pixel grid, and at FINE
+        // that measured as a blue cast: R 0.93 / G 0.93 / B 1.14.
         float g = 0.78;
-        vec3 m = vec3(step(slot, g),
-                      step(1.0, slot) * step(slot, 1.0 + g),
-                      step(2.0, slot) * step(slot, 2.0 + g));
+        vec3 m = vec3(stripe(slot, 0.5, g * 0.5, aa),
+                      stripe(slot, 1.5, g * 0.5, aa),
+                      stripe(slot, 2.5, g * 0.5, aa));
         return m * (3.0 / g);
     }
     if (kind < 5.5) {
@@ -295,38 +535,25 @@ vec3 mask(vec2 px, float kind, float pitch)
         // thing about a Trinitron, it is the thing people either love or send
         // the set back over, and it is why this is its own rung rather than a
         // switch on GRILLE.
-        vec3 m = vec3(step(slot, 1.0),
-                      step(1.0, slot) * step(slot, 2.0),
-                      step(2.0, slot)) * 3.0;
+        vec3 m = vec3(stripe(slot, 0.5, 0.5, aa),
+                      stripe(slot, 1.5, 0.5, aa),
+                      stripe(slot, 2.5, 0.5, aa)) * 3.0;
         // Two wires, at the thirds -- the large-set arrangement. Placed by
         // FRACTION of the picture rather than in pixels, because the wire is
         // a fixed feature of the tube and does not move when the window does.
         float wire = max(pitch * 0.5, 1.0);
-        float d1 = abs(px.y - love_ScreenSize.y * 0.3333);
-        float d2 = abs(px.y - love_ScreenSize.y * 0.6667);
+        float d1 = abs(px.y - spanY * 0.3333);
+        float d2 = abs(px.y - spanY * 0.6667);
         float shade = min(smoothstep(0.0, wire, d1), smoothstep(0.0, wire, d2));
         return m * mix(0.45, 1.0, shade);
     }
-    // DOT: the fine-pitch shadow mask of a high-end set -- the same hex
-    // lattice as SHADOW, but the dots are round in BOTH axes rather than
-    // banded only vertically. That is what a mask actually looks like once
-    // the pitch is fine enough that you stop reading it as stripes, and it
-    // is the reason this is a separate rung: at FINE pitch it dissolves into
-    // colour rather than into a pattern, which SHADOW never quite does.
-    float rowd = floor(px.y / (pitch * 1.732));
-    vec2 cd = vec2(fract(cell + 0.5 * mod(rowd, 2.0)),
-                   fract(px.y / (pitch * 1.732)));
-    float s3 = cd.x * 3.0;
-    vec3 m = vec3(step(s3, 1.0),
-                  step(1.0, s3) * step(s3, 2.0),
-                  step(2.0, s3));
-    vec2 dv = vec2(fract(s3) - 0.5, cd.y - 0.5) * 2.0;
-    float r = length(dv);
-    // A round dot lights less of its cell than a vertical band does, so the
-    // triad would average below 1.0 and the rung would read as "darker" when
-    // what changed was the SHAPE. 1.55 is the ratio of the two coverages and
-    // puts it back on equal terms with the rungs above.
-    return m * 3.0 * 1.55 * smoothstep(1.0, 0.30, r);
+    // DOT: the fine-pitch mask of a high-end set -- the same delta lattice as
+    // SHADOW, on a much SHALLOWER matrix. A fine mask has proportionally less
+    // steel between its holes, so the rows barely darken and what is left is
+    // the diagonal colour. That is the reason this is a rung of its own: at
+    // FINE pitch it dissolves into COLOUR rather than into a pattern, which
+    // SHADOW never quite does.
+    return dotMask(px, pitch, aa);
 }
 
 vec4 effect(vec4 color, Image tex, vec2 tc, vec2 pc)
@@ -426,7 +653,14 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 pc)
     // The width follows the SIGNAL, which is the whole idea: bright lines
     // swell until they nearly touch, dim ones stay thin with black between.
     if (beamScan > 0.0) {
-        float dist = abs(fract(gbPix.y) - 0.5) * 2.0;
+        // which axis the lines are drawn ALONG. A tube's beam sweeps across
+        // and steps down, so the lines stack vertically and this is gbPix.y;
+        // with the tube on its side they stack sideways instead. The mask
+        // turns with it, because a mask and a scanline belong to the same
+        // piece of glass and cannot disagree about which way up it is.
+        float scanAxis = gbPix.y;
+        if (beamRot > 0.5) scanAxis = gbPix.x;
+        float dist = abs(fract(scanAxis) - 0.5) * 2.0;
         vec3 c = clamp(lin, 0.0, 1.0);
         vec3 sigma = vec3(BEAM_MIN_SIGMA)
                    + (BEAM_MAX_SIGMA - BEAM_MIN_SIGMA)
@@ -441,7 +675,15 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 pc)
 
     // ---- 3. the mask, AFTER the gain (megatron) ----
     if (beamMask >= 0.5) {
-        vec3 m = mask(pc, beamMask, max(beamPitch, 1.0));
+        // The whole rotation is this swap and the scan axis above. Nothing
+        // else in the pass has a handedness: the glow is a ring, the edge
+        // falloff is radial, and the rolling scan is deliberately left alone
+        // -- it is the tube's TIMING rather than its geometry, and it sweeps
+        // top to bottom whichever way the glass is turned.
+        vec2 mpx = pc;
+        float mspan = love_ScreenSize.y;
+        if (beamRot > 0.5) { mpx = vec2(pc.y, pc.x); mspan = love_ScreenSize.x; }
+        vec3 m = mask(mpx, beamMask, max(beamPitch, 1.0), mspan);
         lin *= mix(vec3(1.0), m * (MASK_GAIN / 3.0), beamMaskAmt);
     }
 
@@ -504,6 +746,21 @@ CrtBeam.MASKAMT= { off = 0, grille = 0.85, slot = 0.85, shadow = 0.85,
 -- FINE is the honest limit rather than a rung for its own sake: below ~2
 -- screen pixels a triad cannot be drawn by a panel with square pixels
 -- without turning into moire, so there is nothing under it.
+--
+-- What the number BUYS is one phosphor, and the rungs are the same for every
+-- geometry -- but a stripe mask fits three phosphors in `pitch` pixels and a
+-- dot mask cannot, so for SHADOW and DOT the number is the size of one HOLE
+-- and their triad is three times as wide. That is a resolution limit and not
+-- a taste: see the note over dotMask for the measurement. It means the two
+-- dot rungs are visibly coarser than the four stripe rungs at the same
+-- setting, which is correct -- it is the same phosphor either way.
+--
+-- FINE and WIDE both used to be broken, and in the same way: 2 and 4.5 are
+-- not whole numbers of pixels per stripe, a hard step() sampled the three
+-- stripes unevenly, and the picture took a colour cast -- at FINE the GREEN
+-- stripe was lost almost entirely (R and B at 1.39 of the mean against G at
+-- 0.22, i.e. magenta), at WIDE it was R 1.20 / G 0.82. Both are now dead
+-- level, because the stripes are drawn by coverage; see stripe().
 CrtBeam.PITCH  = { fine = 2.0, normal = 3.0, wide = 4.5, widest = 6.0 }
 
 -- ------- the controls on the front of the set
@@ -530,6 +787,34 @@ CrtBeam.SAT = {
   ["200"] = 2.00,
 }
 CrtBeam.MONO = { off = 0, on = 1 }
+
+-- ------- which way up the glass is
+--
+-- OFF is a real tube: the beam sweeps across and steps down, so the lines
+-- stack vertically and the phosphor stripes stand upright. ON turns both a
+-- quarter turn together -- they are the same piece of glass and cannot
+-- disagree -- and it is on the page for ONE reason, which is worth writing
+-- down so nobody later mistakes it for a style.
+--
+-- This console's panel is portrait glass turned on its side: DRM reports it
+-- 800x1280 at 100x160mm, presented as 1280x800 with the connector rotated
+-- `right`. On an ordinary landscape panel a grille at one pixel per phosphor
+-- happens to land ON the physical subpixels -- ask for a pure red pixel and
+-- the panel lights a tall thin red bar exactly where the simulated red stripe
+-- is -- and that coincidence is most of why fine masks look crisp elsewhere.
+-- Here it is lost by ninety degrees, so each upright stripe is reproduced as
+-- a stack of horizontal thirds instead. That is below the framebuffer and no
+-- shader can reach it.
+--
+-- So this row is a MEASURING INSTRUMENT, not a look. Turn it on, and if the
+-- mask suddenly reads cleaner than it did upright, the panel's subpixels are
+-- what you were fighting rather than anything in this pass. The panel does
+-- not declare its layout -- DRM answers `Subpixel: unknown` -- so this is the
+-- only way to find out from the chair.
+--
+-- OFF is the default and should stay the default. ON is a tube lying on its
+-- side, which no tube ever did.
+CrtBeam.ROT    = { off = 0, on = 1 }
 
 CrtBeam.SCAN   = { off = 0, low = 0.35, normal = 0.7, high = 1.0 }
 CrtBeam.GLOW   = { off = 0, low = 0.5, normal = 1.0, high = 2.0 }
@@ -827,6 +1112,7 @@ function CrtBeam.apply(canvas, pixelScale)
     sh:send("beamMask", CrtBeam.maskKind())
     sh:send("beamMaskAmt", amount(CrtBeam.MASKAMT, Settings.beammask, "off"))
     sh:send("beamPitch", amount(CrtBeam.PITCH, Settings.beammaskpitch, "normal"))
+    sh:send("beamRot", amount(CrtBeam.ROT, Settings.beamrot, "off"))
     sh:send("beamMono", amount(CrtBeam.MONO, Settings.beammono, "off"))
     sh:send("beamSat", amount(CrtBeam.SAT, Settings.beamsat, "100"))
     sh:send("beamContrast",
