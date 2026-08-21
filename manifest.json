@@ -18,5 +18,9 @@
   "affects_link": false,
   "description": "Moves the GBC FX light with the motion sensor of the Steam Deck. The glare, the shimmer and the drop shadow follow the angle of the console. Reads the sensor from the HID device and replaces only the light position in the shader of the engine. Does not write to any engine file. Gives the light back to the engine if the sensor is not available. Claims no hotkey. Changes the display only.",
   "author": "Kevin Boggs",
-  "license": "MIT"
+  "license": "MIT",
+  "games": [
+    "gen1",
+    "gen2"
+  ]
 }

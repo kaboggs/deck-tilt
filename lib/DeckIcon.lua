@@ -145,8 +145,30 @@ end
 local ROW_ID = "DECK_TILT:gyro"
 local installed = false
 
+-- Is this a Gen 2 (Gold / Silver) boot?
+--
+-- src.core.GameVersion is NOT one of the fifteen Gen 1 names the loader's
+-- require shim interposes (src/mods/Gen2Compat.lua), so asking it costs
+-- nothing and reports nothing. GameVersion.generation() with no argument
+-- answers for the version actually running; anything without a `generation`
+-- field reads as 1.
+local function isGen2()
+  local ok, GV = pcall(require, "src.core.GameVersion")
+  if not ok or type(GV) ~= "table" or type(GV.generation) ~= "function" then
+    return false
+  end
+  local okGen, gen = pcall(GV.generation)
+  return okGen and gen == 2
+end
+
 function DeckIcon.install()
   if installed then return end
+  -- Gold builds none of its menus on OptionRows, so there is no row here to
+  -- mark. Returning before the require keeps the module out of the loader's
+  -- error feed as well -- a mod that merely MENTIONS a Gen 1 name from its own
+  -- chunk is reported once, which turned the DECK_TILT row red on Gold for a
+  -- wrap that could never have drawn anything.
+  if isGen2() then installed = true return end
   local ok, OptionRows = pcall(require, "src.ui.OptionRows")
   if not ok or type(OptionRows) ~= "table"
      or type(OptionRows.draw) ~= "function" then

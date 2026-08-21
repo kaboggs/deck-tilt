@@ -260,6 +260,47 @@ local function newPage(game, rows, page)
 end
 
 -- One group's page: its settings, plus whatever extras it declares.
+-- Is this a Gen 2 (Gold / Silver) boot?
+--
+-- src.core.GameVersion is NOT one of the fifteen Gen 1 names the loader's
+-- require shim interposes (src/mods/Gen2Compat.lua), so asking it costs
+-- nothing and reports nothing. GameVersion.generation() with no argument
+-- answers for the version actually running; anything without a `generation`
+-- field reads as 1.
+local function isGen2()
+  local ok, GV = pcall(require, "src.core.GameVersion")
+  if not ok or type(GV) ~= "table" or type(GV.generation) ~= "function" then
+    return false
+  end
+  local okGen, gen = pcall(GV.generation)
+  return okGen and gen == 2
+end
+
+-- OptionRows.clampScroll is four lines of arithmetic over one constant, and
+-- this page draws itself, so on Gold we do the same sum rather than reach for
+-- a Gen 1 module the engine would report us for touching. Gen 1 still defers
+-- to the engine's copy so the two can never drift.
+local VISIBLE_FALLBACK = 4
+
+local function clampScroll(index, scroll, total, bottomRow)
+  if not isGen2() then
+    local ok, OptionRows = pcall(require, "src.ui.OptionRows")
+    if ok and type(OptionRows) == "table"
+       and type(OptionRows.clampScroll) == "function" then
+      return OptionRows.clampScroll(index, scroll, total, bottomRow)
+    end
+  end
+  local visible = VISIBLE_FALLBACK
+  if bottomRow and index >= bottomRow then
+    return math.max(0, total - visible)
+  elseif index <= scroll then
+    return index - 1
+  elseif index > scroll + visible then
+    return index - visible
+  end
+  return scroll
+end
+
 function GyroMenu.group(game, group)
   local page = { swatchRowId = nil }
   local rows = {}
@@ -407,9 +448,7 @@ function GyroMenu:update(dt)
     self.game:writeOptions()
   end
 
-  local OptionRows = require("src.ui.OptionRows")
-  self.scroll = OptionRows.clampScroll(self.index, self.scroll or 0,
-                                       #rows, backRow)
+  self.scroll = clampScroll(self.index, self.scroll or 0, #rows, backRow)
 end
 
 -- The SELECT hint, exposed so its width can be asserted rather than eyeballed.
