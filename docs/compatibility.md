@@ -44,13 +44,30 @@ rendered output at every pitch rung; none of the mods above changed.
 
 ## Engine
 
-The mod needs `game/src/render/GBCFX.lua`. It reads that shader's text,
-rewrites one statement in memory, and compiles its own copy. No engine file is
-written to.
+The mod draws through one of two seams, and since 0.9.1 it claims BOTH
+whenever each is offered, because which one is live is a fact about the
+renderer, not about which files exist:
 
-If a future engine writes that statement differently, the rewrite misses, the
-status row says so, and the game draws its own light. The test suite runs the
-rewrite against the engine's real shader, so it fails there instead.
+* **The GBCFX takeover** (0.2.15 and the git-era engines). The mod reads
+  `game/src/render/GBCFX.lua`'s shader text, rewrites one statement in
+  memory, compiles its own copy, and wraps `present()`/`active()`. No engine
+  file is written to. If a future engine writes that statement differently,
+  the rewrite misses, the status row says so, and the game draws its own
+  light. The test suite runs the rewrite against the engine's real shader,
+  so it fails there instead.
+
+* **The `render.output_enabled` / `render.output` hooks** (upstream 0.2.36,
+  which deleted GBCFX.lua for the ShaderFX presets). The same pass chain and
+  the same overlay, handed the finished composite; answering "not handled"
+  on any failure gives the frame back to the engine.
+
+The seams cannot double-draw — an engine that raises `render.output` checks
+it before its own present effects and skips them when the frame is handled,
+and an engine that drives GBCFX never raises `render.output` — and 0.9.1
+exists because choosing by the MODULE was wrong: an install can restore
+GBCFX.lua as a compatibility library for other mods while its renderer never
+calls it. The status row now reports GBCFX only when the engine actually
+speaks through it (`OVERLAY OFF`, not `GBCFX OFF`, on a hook-driven engine).
 
 ## Games
 
