@@ -66,6 +66,32 @@ do
   end
 end
 
+-- ------- the engine's own sensor service, for engines that deny ffi
+--
+-- The 0.2.15+ packaged engines sandbox mod chunks and deny require("ffi")
+-- outright -- no permission unlocks it -- so the hidraw path above reports
+-- NO FFI on every release build.  What those same engines GAINED is
+-- src/core/Sensors.lua: accelerometer and gyroscope reads through the SDL2
+-- the engine links, made for the tilt-driven shader presets.  It is an
+-- ENGINE chunk, so its own internal require("ffi") is the engine wiring
+-- itself up and passes the sandbox; this mod only calls Sensors.read, which
+-- engine_internals already covers.  Axis frame differences against the raw
+-- hidraw report are absorbed where they always were: the AXIS MAP rows.
+local EngineSensors
+do
+  local ok, mod = pcall(require, "src.core.Sensors")
+  if ok and type(mod) == "table" and type(mod.read) == "function" then
+    EngineSensors = mod
+  end
+end
+
+-- SDL serves SI units.  The hidraw path hands Motion raw counts at the
+-- Deck's measured ~0.02 deg/s per count, so rad/s scales by 180/pi * 50 to
+-- land in the units GYRO_K and the twist integral were tuned in.
+local GYRO_COUNTS = 2865
+-- m/s^2; a real gravity vector is ~9.81, so this floor is noise-only.
+local MIN_ACCEL = 2.0
+
 local O_RDONLY, O_NONBLOCK = 0, 2048 -- Linux; O_NONBLOCK is 0o4000
 
 local REPORT = 64
@@ -109,13 +135,13 @@ local MAX_DRAIN = 64
 --
 -- status is the single value the options row reports and the light mapping
 -- gates on:
---   "NO FFI"  LuaJIT FFI unavailable -- mod inert
+--   "NO FFI"  LuaJIT FFI unavailable AND no engine sensor service -- inert
 --   "NO DEV"  no Steam controller HID node we can read
 --   "SEEK"    open, waiting for a report we recognise
 --   "ASLEEP"  reports arriving, IMU block zeroed (enable gyro in Steam Input)
 --   "LIVE"    real acceleration
 
-Imu.status = haveFfi and "SEEK" or "NO FFI"
+Imu.status = (haveFfi or EngineSensors) and "SEEK" or "NO FFI"
 Imu.path = nil
 Imu.x, Imu.y, Imu.z = 0, 0, 0 -- last good gravity DIRECTION (unit vector)
 
@@ -293,6 +319,47 @@ end
 -- Everything that can go wrong here degrades to nil and a status string;
 -- no path errors.
 
+-- The ffi-less arm of poll: the same gravity-direction answer, read through
+-- the engine's Sensors service.  Mirrors drain()'s magnitude floor and its
+-- continuous shake weighting, and poll()'s twist integral, so Motion sees
+-- the same contract whichever arm fed it.
+local function pollEngine(dt)
+  local okA, ax, ay, az = pcall(EngineSensors.read, "accelerometer")
+  if not okA or not ax then return nil end
+  if ax == 0 and ay == 0 and az == 0 then
+    -- The service answers but the block is zero: no sensor on this host, or
+    -- Steam has not granted it (a terminal launch).  Same meaning, same
+    -- word, as the hidraw path's zeroed IMU block.
+    zeroClock = zeroClock + dt
+    if zeroClock > SLEEP_TIMEOUT then
+      Imu.status = "ASLEEP"
+      Imu.twist = 0
+    end
+    return nil
+  end
+  local mag = math.sqrt(ax * ax + ay * ay + az * az)
+  if mag < MIN_ACCEL then return nil end
+  magAvg = magAvg and (magAvg + (mag - magAvg) * 0.01) or mag
+  local off = magAvg > 0 and math.abs(mag - magAvg) / magAvg or 0
+  local trust = math.exp(-(off / SHAKE_TOL) ^ 2)
+  if not Imu.rejectShake then trust = 1 end
+  Imu.trust = trust
+  Imu.x, Imu.y, Imu.z = ax / mag, ay / mag, az / mag
+  Imu.counts = mag -- SI magnitude here; diagnostics only, as ever
+  local okG, gx, gy, gz = pcall(EngineSensors.read, "gyroscope")
+  if okG and gx then
+    Imu.rx, Imu.ry, Imu.rz = gx * GYRO_COUNTS, gy * GYRO_COUNTS, gz * GYRO_COUNTS
+  else
+    Imu.rx, Imu.ry, Imu.rz = 0, 0, 0
+  end
+  local LEAK = 2.5
+  Imu.twist = (Imu.twist + Imu.rz * dt) * math.exp(-dt / LEAK)
+  if Imu.twist > 2 then Imu.twist = 2 elseif Imu.twist < -2 then Imu.twist = -2 end
+  Imu.status, zeroClock = "LIVE", 0
+  Imu.path = "engine:sensors"
+  return Imu.x, Imu.y, Imu.z
+end
+
 -- `demo` forces the synthetic sweep for this call, so the MOTION row can
 -- select it at runtime.  DECK_TILT_FAKE=1 still forces it globally, which is
 -- what the headless tests and the launcher flag use.
@@ -320,7 +387,10 @@ function Imu.poll(dt, demo)
     return Imu.x, Imu.y, Imu.z
   end
 
-  if not haveFfi then return nil end
+  if not haveFfi then
+    if EngineSensors then return pollEngine(dt) end
+    return nil
+  end
 
   if #open == 0 then
     -- Re-scan periodically rather than never: the controller can enumerate
