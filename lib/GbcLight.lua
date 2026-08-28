@@ -55,8 +55,24 @@ local shader          -- our patched shader; false once we have given up
 local hasShadow = false -- whether the optional shadow-offset rewrite landed
 local hasAmount = false -- whether the optional shadow-strength rewrite landed
 local failure         -- why, for the status row
-local hookFailure     -- why the render.output seam could not be claimed
+local hookFailure     -- why no seam at all could be claimed
 local installed = false
+
+-- Whether the ENGINE has actually raised the render.output seam this run.
+-- The GBCFX module EXISTING is not the same fact: the 0.2.36 installs
+-- restore src/render/GBCFX.lua as a compatibility library for the mods
+-- that require it, but their renderer never calls it -- the module exists
+-- and is dead.  Which seam is live is known only from which one the engine
+-- actually speaks through, and this flag is that answer, for the status
+-- row.
+local outputSeamLive = false
+
+-- True while present() runs under the render.output link.  There, "could
+-- not draw" must answer "not handled" -- the engine then draws the frame
+-- itself, ShaderFX presets and all -- rather than reach for stockPresent,
+-- which belongs to the takeover seam and would claim a frame through a
+-- module the renderer no longer drives.
+local inHook = false
 
 -- The one fallback every draw path funnels through.  With GBCFX present it
 -- is the engine's own present, called exactly as before.  Without it there
@@ -64,6 +80,7 @@ local installed = false
 -- engine draws the frame itself.  Returns whether the frame reached the
 -- screen here, which is the answer the hook has to give.
 local function fallThrough(canvas, pixelScale)
+  if inHook then return false end
   if stockPresent then
     stockPresent(canvas, pixelScale)
     return true
@@ -683,7 +700,7 @@ function GbcLight.install()
   if installed then return end
   installed = true
 
-  -- ------- engine without GBCFX (0.2.36+): own the final output instead
+  -- ------- the render.output seam (0.2.36+), claimed whenever it is offered
   --
   -- The seam is render.output_enabled / render.output, offered by BOTH
   -- generations' present passes: the enabled link decides whether the engine
@@ -692,28 +709,47 @@ function GbcLight.install()
   -- for us.  Answering false at either point hands the frame straight back,
   -- so the failure mode stays what it always was: losing the feature, never
   -- the frame.
+  --
+  -- Claimed even when GBCFX is present, because PRESENT is not the same as
+  -- DRIVEN: the 0.2.36 installs restore src/render/GBCFX.lua as a library
+  -- for the mods that require it, but their renderer never calls
+  -- active()/present() -- so choosing a seam by the module's existence
+  -- picked the dead one, and the light silently vanished (found on the
+  -- 0.2.36 trial install, 2026-08-28).  Claiming both cannot double-draw:
+  -- an engine that raises render.output checks it BEFORE its own present
+  -- effects and skips them when the frame is handled, and an engine that
+  -- drives GBCFX never raises render.output at all.
+  local hooks = V.mod and V.mod.hooks
+  local hookSeam = false
+  if hooks and hooks.wrap then
+    hookSeam = pcall(function()
+      hooks:wrap("render.output_enabled", function(nextLink)
+        outputSeamLive = true
+        local okW, want = pcall(GbcLight.frameWanted)
+        if okW and want then return true end
+        return nextLink()
+      end)
+      hooks:wrap("render.output", function(nextLink, frame)
+        outputSeamLive = true
+        if type(frame) ~= "table" or not frame.canvas then return nextLink(frame) end
+        local okW, want = pcall(GbcLight.frameWanted)
+        if not okW or not want then return nextLink(frame) end
+        -- frame.scale is the same GB-pixel multiplier pixelScale always was;
+        -- the swatch strip goes in first, exactly as the wrapped present did.
+        pcall(drawSwatches, frame.canvas, frame.scale)
+        inHook = true
+        local okRun, handled = pcall(present, frame.canvas, frame.scale)
+        inHook = false
+        if okRun and handled then return true end
+        return nextLink(frame)
+      end)
+    end)
+  end
+
   if not GBCFX then
-    local hooks = V.mod and V.mod.hooks
-    if not (hooks and hooks.wrap) then
-      hookFailure = "NO SEAM"
-      return
-    end
-    hooks:wrap("render.output_enabled", function(nextLink)
-      local okW, want = pcall(GbcLight.frameWanted)
-      if okW and want then return true end
-      return nextLink()
-    end)
-    hooks:wrap("render.output", function(nextLink, frame)
-      if type(frame) ~= "table" or not frame.canvas then return nextLink(frame) end
-      local okW, want = pcall(GbcLight.frameWanted)
-      if not okW or not want then return nextLink(frame) end
-      -- frame.scale is the same GB-pixel multiplier pixelScale always was;
-      -- the swatch strip goes in first, exactly as the wrapped present did.
-      pcall(drawSwatches, frame.canvas, frame.scale)
-      local okRun, handled = pcall(present, frame.canvas, frame.scale)
-      if okRun and handled then return true end
-      return nextLink(frame)
-    end)
+    -- An engine with no GBCFX and no hook seam has nowhere for this mod
+    -- to draw at all; the status row says so rather than pretending.
+    if not hookSeam then hookFailure = "NO SEAM" end
     return
   end
 
@@ -766,9 +802,12 @@ function GbcLight.status()
       local Overlay = V.require("Overlay")
       return Overlay.status() or Imu.status
     end
-    -- Without GBCFX there is no engine effect to be OFF; the light is simply
-    -- not asked for, which is the OVERLAY row's doing.
-    return GBCFX and "GBCFX OFF" or "OVERLAY OFF"
+    -- Without a DRIVEN GBCFX there is no engine effect to be OFF; the
+    -- light is simply not asked for, which is the OVERLAY row's doing.  A
+    -- GBCFX that exists while the engine speaks render.output instead --
+    -- the restored-library case -- is judged by the seam that is actually
+    -- live, not by the module being on disk.
+    return (GBCFX and not outputSeamLive) and "GBCFX OFF" or "OVERLAY OFF"
   end
   if shader == false then return failure or "ERROR" end
   return Imu.status

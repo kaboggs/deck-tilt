@@ -2654,9 +2654,10 @@ do
   -- pass of ours asks. Without this the GBC SCREEN rows would set values
   -- that never reach a frame while the 3D mod holds GBC FX off -- which is
   -- exactly the situation the pass is most useful in.
-  -- Only on an engine that has GBCFX; without it the same question is
-  -- answered by the render.output_enabled link, through the shared
-  -- GbcLight.frameWanted(), asserted below either way.
+  -- On an engine that drives GBCFX that is the wrapped active(); the
+  -- render.output_enabled link asks the same question through the shared
+  -- GbcLight.frameWanted() -- and since the fix below, BOTH seams are
+  -- installed on every engine, so each is asserted where it can be.
   local okFx2, GBCFX2 = pcall(require, "src.render.GBCFX")
   if okFx2 and GBCFX2 then
     local keepLevel = GBCFX2.level
@@ -2924,6 +2925,54 @@ do
   T.eq(DeckIcon.angleAt(0), -DeckIcon.ANGLE, "step 1 tips one way")
   T.eq(DeckIcon.angleAt(DeckIcon.FRAME_TIME * 2), DeckIcon.ANGLE,
     "and step 3 tips the other")
+end
+
+-- ------- the two seams, and which one is live
+--
+-- The patched 0.2.36 installs restore src/render/GBCFX.lua as a
+-- compatibility LIBRARY: the module exists, the renderer never calls it,
+-- and the finished frame is offered through render.output instead.
+-- Choosing a seam by the module's existence therefore picked a dead one,
+-- and the light silently vanished on exactly the engine the fallback was
+-- written for (the 0.2.36 trial install, 2026-08-28).  What must be true
+-- instead, on EVERY engine: the output links are registered whether or not
+-- GBCFX exists, they claim the frame exactly when frameWanted() says so, a
+-- frame this harness cannot draw is handed back rather than claimed, and
+-- the status row judges GBCFX by whether the engine actually speaks
+-- through it.
+do
+  local hooks = run.loader.hooks
+  local keepOverlay = Settings.overlay.index
+  local keepLevel = GBCFX and GBCFX.level
+
+  if GBCFX then GBCFX.setLevel(0) end
+  Settings.overlay:sync("on")
+  T.eq(GbcLight.frameWanted(), true, "3D LIGHT ON wants the frame")
+  T.eq(hooks:call("render.output_enabled", function() return false end), true,
+    "and the output_enabled link claims it -- with GBCFX present too, "
+    .. "because a restored library says nothing about who is driving")
+
+  -- A frame this harness cannot draw (no GPU, no sensor) must be handed
+  -- BACK -- the engine's own draw runs and nothing is claimed -- never
+  -- swallowed by a fallthrough into a stock present the engine that raised
+  -- this hook no longer drives.
+  local vanillaRan = false
+  local handled = hooks:call("render.output", function()
+      vanillaRan = true
+      return false
+    end, { canvas = {}, width = 320, height = 288, scale = 2 })
+  T.eq(handled, false, "a frame that could not be drawn is not claimed")
+  T.eq(vanillaRan, true, "and the engine's own draw still runs")
+
+  -- The links above spoke, so the mod now KNOWS this engine raises the
+  -- output seam -- and the status row must stop blaming a GBCFX row the
+  -- engine is not reading.
+  Settings.overlay:sync("off")
+  T.eq(GbcLight.status(), "OVERLAY OFF",
+    "once the engine speaks render.output, the status judges the live seam")
+
+  Settings.overlay.index = keepOverlay
+  if GBCFX then GBCFX.setLevel(keepLevel) end
 end
 
 run.release()
