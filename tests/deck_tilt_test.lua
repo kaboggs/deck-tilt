@@ -20,7 +20,13 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.modkit")
-local GBCFX = require("src.render.GBCFX")
+-- 0.2.36 removed src/render/GBCFX.lua (ShaderFX presets took its slot), so
+-- the engine under test may not have it.  Everything asserted against the
+-- module is conditional on it existing; what the suite proves on a
+-- GBCFX-less engine is that the mod still loads clean and answers sensibly,
+-- which is exactly the graceful-degradation contract this file opens with.
+local okGbcFx, GBCFX = pcall(require, "src.render.GBCFX")
+if not okGbcFx then GBCFX = nil end
 
 local MOD_PATH = os.getenv("DECK_TILT_MOD_PATH") or "mods/DECK_TILT"
 local run = T.sdk.loadMod(MOD_PATH)
@@ -56,36 +62,46 @@ local Settings = V.require("Settings")
 local Imu = V.require("Imu")
 
 -- ------- the shader rewrite, against the engine's real source
+--
+-- Only meaningful on an engine that still ships GBCFX; without it there is
+-- no shader to rewrite and the light lives in the overlay pass alone.
 
-T.check(type(GBCFX.SHADER_SRC) == "string",
-  "the engine still exports its GBC FX shader source")
+if GBCFX then
+  T.check(type(GBCFX.SHADER_SRC) == "string",
+    "the engine still exports its GBC FX shader source")
 
-local patched, why = GbcLight.patchSource(GBCFX.SHADER_SRC)
-T.check(patched ~= nil,
-  "the lightPos statement is still findable in the engine's shader ("
-  .. tostring(why) .. ")")
+  local patched, why = GbcLight.patchSource(GBCFX.SHADER_SRC)
+  T.check(patched ~= nil,
+    "the lightPos statement is still findable in the engine's shader ("
+    .. tostring(why) .. ")")
 
-if patched then
-  T.check(patched:find("extern vec2 deckLight;", 1, true) ~= nil,
-    "the patched source declares the light uniform")
-  T.check(patched:find("vec2 lightPos = deckLight;", 1, true) ~= nil,
-    "and reads lightPos from it")
-  T.check(patched:find("sin(time * 0.13)", 1, true) == nil,
-    "the engine's clock-driven light expression is gone")
-  -- the tilt uniform must reach BOTH rewritten statements, not just the
-  -- light -- the shadow rewrite reads it too
-  local _, uses = patched:gsub("deckLight", "")
-  T.check(uses >= 2,
-    "both the light and the shadow offset read the tilt uniform")
+  if patched then
+    T.check(patched:find("extern vec2 deckLight;", 1, true) ~= nil,
+      "the patched source declares the light uniform")
+    T.check(patched:find("vec2 lightPos = deckLight;", 1, true) ~= nil,
+      "and reads lightPos from it")
+    T.check(patched:find("sin(time * 0.13)", 1, true) == nil,
+      "the engine's clock-driven light expression is gone")
+    -- the tilt uniform must reach BOTH rewritten statements, not just the
+    -- light -- the shadow rewrite reads it too
+    local _, uses = patched:gsub("deckLight", "")
+    T.check(uses >= 2,
+      "both the light and the shadow offset read the tilt uniform")
+  end
+
+  -- the shadow rewrite is optional but must land against the current engine
+  local _, _, hasShadow = GbcLight.patchSource(GBCFX.SHADER_SRC)
+  T.check(hasShadow == true,
+    "the shOff statement is still findable, so the drop shadow can follow the "
+    .. "light instead of always falling down-and-right")
+  T.check(patched and patched:find("extern vec2 deckShadowOff;", 1, true) ~= nil,
+    "and the patched source declares the shadow uniform")
+else
+  -- the graceful half of the contract: no GBCFX may not cost the load
+  local src, why = GbcLight.patchSource(nil)
+  T.check(src == nil and why == "NO SRC",
+    "with no GBCFX, patchSource declines instead of throwing")
 end
-
--- the shadow rewrite is optional but must land against the current engine
-local _, _, hasShadow = GbcLight.patchSource(GBCFX.SHADER_SRC)
-T.check(hasShadow == true,
-  "the shOff statement is still findable, so the drop shadow can follow the "
-  .. "light instead of always falling down-and-right")
-T.check(patched and patched:find("extern vec2 deckShadowOff;", 1, true) ~= nil,
-  "and the patched source declares the shadow uniform")
 
 -- ------- the shadow throw
 --
@@ -144,8 +160,13 @@ T.eq(sy, STOCK, "and its Y offset")
 -- and OFF must genuinely remove the shadow, not merely stop it moving.
 -- Zeroing the OFFSET cannot do that -- the shader still darkens the backing
 -- under the sprite -- so OFF has to scale the strength term instead.
-T.check(patched and patched:find("deckShadowAmt", 1, true) ~= nil,
-  "the strength term is under our control, so OFF can mean off")
+-- (A GBCFX-less engine has no engine shadow to scale; the overlay shader's
+-- own deckShadowAmt is asserted in the overlay block below.)
+if GBCFX then
+  local patched = GbcLight.patchSource(GBCFX.SHADER_SRC)
+  T.check(patched and patched:find("deckShadowAmt", 1, true) ~= nil,
+    "the strength term is under our control, so OFF can mean off")
+end
 
 -- ------- the SHADOW AMT row
 --
@@ -1656,9 +1677,12 @@ end
 -- the other mod is pinning.
 
 do
-  local GBCFX = require("src.render.GBCFX")
+  -- soft, like the top of the file: a GBCFX-less engine holds the level at 0
+  -- by construction, which is precisely the state this block is about
+  local okFx, GBCFX = pcall(require, "src.render.GBCFX")
+  if not okFx then GBCFX = nil end
   local Overlay = V.require("Overlay")
-  local level0 = function() GBCFX.setLevel(0) end
+  local level0 = function() if GBCFX then GBCFX.setLevel(0) end end
 
   T.check(Overlay.SHADER_SRC ~= nil, "the overlay ships its own shader")
   T.check(not Overlay.SHADER_SRC:find("BACK_BRIGHTNESS", 1, true),
@@ -1703,7 +1727,7 @@ do
   Settings.overlay:setPos(3)                       -- OFF
   T.eq(Settings.overlay:get(), "off", "3D LIGHT can be set to OFF")
   T.eq(GbcLight.overlayWanted(), false, "and then the overlay never draws")
-  T.eq(GbcLight.status(), "GBCFX OFF",
+  T.eq(GbcLight.status(), GBCFX and "GBCFX OFF" or "OVERLAY OFF",
     "and the status row says the light is gone, because it is")
 
   -- AUTO draws only when the light is actually missing
@@ -1712,9 +1736,11 @@ do
   level0()
   T.eq(GbcLight.overlayWanted(), true,
     "AUTO draws when something else has pinned GBC FX off")
-  GBCFX.setLevel(4)
-  T.eq(GbcLight.overlayWanted(), false,
-    "and stands down the moment the engine has its own light back")
+  if GBCFX then
+    GBCFX.setLevel(4)
+    T.eq(GbcLight.overlayWanted(), false,
+      "and stands down the moment the engine has its own light back")
+  end
 
   -- ON is unconditional
   Settings.overlay:setPos(2)
@@ -1727,7 +1753,7 @@ do
   T.eq(GbcLight.overlayWanted(), false, "and then nothing draws, ON or not")
   Settings.motion:setPos(keep)
   Settings.overlay:setPos(1)
-  GBCFX.setLevel(4)
+  if GBCFX then GBCFX.setLevel(4) end
 end
 
 
@@ -2628,8 +2654,11 @@ do
   -- pass of ours asks. Without this the GBC SCREEN rows would set values
   -- that never reach a frame while the 3D mod holds GBC FX off -- which is
   -- exactly the situation the pass is most useful in.
-  do
-    local GBCFX2 = require("src.render.GBCFX")
+  -- Only on an engine that has GBCFX; without it the same question is
+  -- answered by the render.output_enabled link, through the shared
+  -- GbcLight.frameWanted(), asserted below either way.
+  local okFx2, GBCFX2 = pcall(require, "src.render.GBCFX")
+  if okFx2 and GBCFX2 then
     local keepLevel = GBCFX2.level
     GBCFX2.setLevel(0)
     local keepOverlay = Settings.overlay.index
@@ -2644,6 +2673,18 @@ do
       "and turning it off gives the engine's own answer back")
     Settings.overlay.index = keepOverlay
     GBCFX2.setLevel(keepLevel)
+  else
+    local keepOverlay = Settings.overlay.index
+    Settings.overlay:sync("off")
+    Settings.pt:sync("off")
+    local before = GbcLight.frameWanted()
+    Settings.pt:sync("whites")
+    T.eq(GbcLight.frameWanted(), true,
+      "GBC SCREEN alone claims the frame through the output hook")
+    Settings.pt:sync("off")
+    T.eq(GbcLight.frameWanted(), before,
+      "and turning it off gives the stood-down answer back")
+    Settings.overlay.index = keepOverlay
   end
 end
 

@@ -32,14 +32,44 @@ local Settings = V.require("Settings")
 
 local GbcLight = {}
 
-local GBCFX = require("src.render.GBCFX")
-local stockPresent = GBCFX.present
+-- Engine 0.2.36 removed src/render/GBCFX.lua outright -- its level ladder
+-- became the ShaderFX preset picker -- so the module this file takes over
+-- may simply not exist.  Everything below carries both answers: with GBCFX
+-- present the takeover works exactly as it always has; without it the same
+-- passes and the same overlay reach the frame through the engine's
+-- render.output seam instead (the final-output owner both Renderer.lua and
+-- Game2's drawViewportFrame offer at 0.2.36), and the patched-LCD light --
+-- a rewrite of a shader that no longer exists -- degrades to the overlay,
+-- which is what a level-0 player was seeing anyway.
+local okGbcFx, GBCFX = pcall(require, "src.render.GBCFX")
+if not okGbcFx or type(GBCFX) ~= "table" then GBCFX = nil end
+local stockPresent = GBCFX and GBCFX.present
+
+-- GBCFX.level with the module possibly absent: no module reads as level 0,
+-- which routes every consumer to the overlay/stock answer it already had.
+local function fxLevel()
+  return (GBCFX and GBCFX.level) or 0
+end
 
 local shader          -- our patched shader; false once we have given up
 local hasShadow = false -- whether the optional shadow-offset rewrite landed
 local hasAmount = false -- whether the optional shadow-strength rewrite landed
 local failure         -- why, for the status row
+local hookFailure     -- why the render.output seam could not be claimed
 local installed = false
+
+-- The one fallback every draw path funnels through.  With GBCFX present it
+-- is the engine's own present, called exactly as before.  Without it there
+-- is nothing to call -- the render.output link answers "not handled" and the
+-- engine draws the frame itself.  Returns whether the frame reached the
+-- screen here, which is the answer the hook has to give.
+local function fallThrough(canvas, pixelScale)
+  if stockPresent then
+    stockPresent(canvas, pixelScale)
+    return true
+  end
+  return false
+end
 
 -- The rewrite itself, kept pure and separate from the compile so a headless
 -- test can hold it against the engine's real shader source.  That test is
@@ -203,6 +233,13 @@ local function build()
     return nil -- headless: try again later rather than failing for good
   end
 
+  -- No GBCFX means no shader source to patch: this engine dropped the
+  -- effect, so the light lives in the overlay pass and nowhere else.
+  if not GBCFX then
+    shader, failure = false, "NO GBCFX"
+    return false
+  end
+
   local patched, why, gotShadow, gotAmount = GbcLight.patchSource(GBCFX.SHADER_SRC)
   if not patched then
     shader, failure = false, why
@@ -298,7 +335,7 @@ local function present(canvas, pixelScale)
   -- GBC FX off, but the overlay wants the frame: draw the light on our own
   -- pass instead of handing back.  Checked BEFORE build(), because build()
   -- patches the ENGINE's shader and that is not the shader this path uses.
-  if (GBCFX.level or 0) <= 0 then
+  if fxLevel() <= 0 then
     if GbcLight.overlayWanted() then
       -- `source` is the frame before RF and CRT touched it. The overlay casts
       -- its drop shadow from that rather than from the processed picture, so
@@ -314,16 +351,16 @@ local function present(canvas, pixelScale)
     if drew then
       love.graphics.setColor(1, 1, 1, 1)
       love.graphics.draw(canvas, 0, 0)
-      return
+      return true
     end
-    return stockPresent(canvas, pixelScale)
+    return fallThrough(canvas, pixelScale)
   end
   local sh = build()
   if not sh then
-    return stockPresent(canvas, pixelScale)
+    return fallThrough(canvas, pixelScale)
   end
 
-  if not lx then return stockPresent(canvas, pixelScale) end
+  if not lx then return fallThrough(canvas, pixelScale) end
 
   local t = (love.timer and love.timer.getTime and love.timer.getTime()) or 0
   sh:send("level", GBCFX.level)
@@ -347,7 +384,7 @@ local function present(canvas, pixelScale)
   end
   if not ok then
     shader, failure = false, "NO UNIF"
-    return stockPresent(canvas, pixelScale)
+    return fallThrough(canvas, pixelScale)
   end
 
   love.graphics.setShader(sh)
@@ -359,6 +396,7 @@ local function present(canvas, pixelScale)
   -- quietly handing back to stock. Tests assert on it; nothing else reads it.
   GbcLight.frames = (GbcLight.frames or 0) + 1
   GbcLight.lightX, GbcLight.lightY = lx, ly
+  return true
 end
 
 -- Is another mod holding GBC FX off, and do we mean to draw anyway?
@@ -373,7 +411,39 @@ function GbcLight.overlayWanted()
   local mode = Settings.overlay:get()
   if mode == "off" then return false end
   if mode == "on" then return true end
-  return (GBCFX.level or 0) <= 0        -- auto
+  return fxLevel() <= 0                 -- auto
+end
+
+-- Does this mod want the finished frame at all this frame?  The one question
+-- both seams ask: the wrapped GBCFX.active() on an engine that still has
+-- GBCFX, and the render.output_enabled link on one that does not.  Order and
+-- gating mirror the original active() wrapper exactly: the overlay and the
+-- signal/tube passes answer for themselves, the picture passes sit behind
+-- the SCREEN FX master, and a pending swatch strip claims the frame so the
+-- GLOW COLOUR row shows its colours whatever else is switched off.
+function GbcLight.frameWanted()
+  if GbcLight.overlayWanted() then return true end
+  local okRf, Rf = pcall(V.require, "RfTv")
+  if okRf and Rf and Rf.wanted() then return true end
+  local okB, Beam = pcall(V.require, "CrtBeam")
+  if okB and Beam then
+    if Beam.wanted() then return true end
+    if Beam.swatchStrip ~= nil then return true end
+  end
+  local okFx, S = pcall(function() return V.require("Settings") end)
+  local fxOn = true
+  if okFx and S and S.screenFxOn then
+    local okV, on = pcall(S.screenFxOn)
+    if okV then fxOn = on end
+  end
+  if not fxOn then return false end
+  local okP, Pt = pcall(V.require, "PixelTrans")
+  if okP and Pt and Pt.wanted() then return true end
+  local okG, Gh = pcall(V.require, "Ghost")
+  if okG and Gh and Gh.wanted() then return true end
+  local okD, Dp = pcall(V.require, "DmgPanel")
+  if okD and Dp and Dp.wanted() then return true end
+  return false
 end
 
 -- SUBTLE is not a smaller number picked by feel: at 1.0 the bands are the
@@ -449,13 +519,13 @@ end
 function GbcLight.presentOverlay(canvas, pixelScale, clean, lx, ly)
   local Overlay = V.require("Overlay")
   local sh = Overlay.shader()
-  if not sh then return stockPresent(canvas, pixelScale) end
+  if not sh then return fallThrough(canvas, pixelScale) end
 
   if not lx then
     local dt = (love.timer and love.timer.getDelta and love.timer.getDelta()) or 0
     lx, ly = Motion.light(dt)
   end
-  if not lx then return stockPresent(canvas, pixelScale) end
+  if not lx then return fallThrough(canvas, pixelScale) end
 
   local t = (love.timer and love.timer.getTime and love.timer.getTime()) or 0
   local mode = Settings.shadow:get()
@@ -482,7 +552,7 @@ function GbcLight.presentOverlay(canvas, pixelScale, clean, lx, ly)
     -- same glass and swings with it instead of sitting flat on top
     sh:send("deckCurve", hasClean and V.require("RfTv").barrelK() or 0)
   end)
-  if not ok then return stockPresent(canvas, pixelScale) end
+  if not ok then return fallThrough(canvas, pixelScale) end
 
   love.graphics.setShader(sh)
   love.graphics.setColor(1, 1, 1, 1)
@@ -492,6 +562,7 @@ function GbcLight.presentOverlay(canvas, pixelScale, clean, lx, ly)
   GbcLight.overlayFrames = (GbcLight.overlayFrames or 0) + 1
   GbcLight.shadowX, GbcLight.shadowY = ox, oy
   GbcLight.lightX, GbcLight.lightY = lx, ly
+  return true
 end
 
 -- ------- the colour swatches, and why they are drawn from HERE
@@ -611,6 +682,43 @@ end
 function GbcLight.install()
   if installed then return end
   installed = true
+
+  -- ------- engine without GBCFX (0.2.36+): own the final output instead
+  --
+  -- The seam is render.output_enabled / render.output, offered by BOTH
+  -- generations' present passes: the enabled link decides whether the engine
+  -- pays for a present canvas at all, and the output link is then handed the
+  -- finished composite to draw -- exactly the job GBCFX.present used to do
+  -- for us.  Answering false at either point hands the frame straight back,
+  -- so the failure mode stays what it always was: losing the feature, never
+  -- the frame.
+  if not GBCFX then
+    local hooks = V.mod and V.mod.hooks
+    if not (hooks and hooks.wrap) then
+      hookFailure = "NO SEAM"
+      return
+    end
+    hooks:wrap("render.output_enabled", function(nextLink)
+      local okW, want = pcall(GbcLight.frameWanted)
+      if okW and want then return true end
+      return nextLink()
+    end)
+    hooks:wrap("render.output", function(nextLink, frame)
+      if type(frame) ~= "table" or not frame.canvas then return nextLink(frame) end
+      local okW, want = pcall(GbcLight.frameWanted)
+      if not okW or not want then return nextLink(frame) end
+      -- frame.scale is the same GB-pixel multiplier pixelScale always was;
+      -- the swatch strip goes in first, exactly as the wrapped present did.
+      pcall(drawSwatches, frame.canvas, frame.scale)
+      local okRun, handled = pcall(present, frame.canvas, frame.scale)
+      if okRun and handled then return true end
+      return nextLink(frame)
+    end)
+    return
+  end
+
+  -- ------- engine with GBCFX: the takeover, exactly as it always was
+  --
   -- Wrapped rather than assigned straight through, so the swatch strip is
   -- drawn on EVERY path through present -- stock, overlay, patched shader
   -- and all the failure returns. A strip that only appeared when the light
@@ -628,38 +736,15 @@ function GbcLight.install()
   -- The engine only calls present() when GBCFX.active() is true, and that is
   -- false at level 0 -- which is exactly the condition the overlay exists
   -- for.  So active() has to answer for the overlay as well, or the pass it
-  -- gates is never reached.  Stock answer otherwise, untouched.
+  -- gates is never reached.  Stock answer otherwise, untouched.  The
+  -- question itself -- overlay, then the signal/tube passes, then the
+  -- picture passes behind the SCREEN FX master -- is frameWanted(), shared
+  -- with the render.output path so the two seams cannot drift apart.
   local stockActive = GBCFX.active
   GBCFX.active = function(...)
-    if (GBCFX.level or 0) <= 0 then
-      if GbcLight.overlayWanted() then return true end
-      -- ...and the same for TV/RF, which is a whole pass of its own and has
-      -- nothing to do with the light or the sensor.  Without this the row
-      -- would set a value that never reached a frame -- a setting you can
-      -- select that then does nothing, which is worse than no setting.
-      local okRf, Rf = pcall(V.require, "RfTv")
-      if okRf and Rf and Rf.wanted() then return true end
-      local okB, Beam = pcall(V.require, "CrtBeam")
-      if okB and Beam and Beam.wanted() then return true end
-      -- ...and the GBC panel pass, which is a frame pass in exactly the way
-      -- TV/RF is: without this its rows would set values that never reach a
-      -- frame while GBC FX is held off, which is precisely the situation
-      -- (the 3D mod) the pass is most likely to be used in.
-      -- ...and all of it is behind the SCREEN FX master, so with that off
-      -- none of these rows claim the pass.
-      local okFx, S = pcall(function() return V.require("Settings") end)
-      local fxOn = true
-      if okFx and S and S.screenFxOn then
-        local okV, on = pcall(S.screenFxOn)
-        if okV then fxOn = on end
-      end
-      if not fxOn then return stockActive(...) end
-      local okP, Pt = pcall(V.require, "PixelTrans")
-      if okP and Pt and Pt.wanted() then return true end
-      local okG, Gh = pcall(V.require, "Ghost")
-      if okG and Gh and Gh.wanted() then return true end
-      local okD, Dp = pcall(V.require, "DmgPanel")
-      if okD and Dp and Dp.wanted() then return true end
+    if fxLevel() <= 0 then
+      local okW, want = pcall(GbcLight.frameWanted)
+      if okW and want then return true end
     end
     return stockActive(...)
   end
@@ -670,7 +755,10 @@ end
 function GbcLight.status()
   local Imu = V.require("Imu")
   if Settings.motion:get() == "off" then return "OFF" end
-  if (GBCFX.level or 0) <= 0 then
+  -- An engine with no GBCFX and no render.output seam has nowhere for this
+  -- mod to draw at all; that is the thing to say first.
+  if hookFailure then return hookFailure end
+  if fxLevel() <= 0 then
     -- "GBCFX OFF" is only the whole story when nothing is drawing.  With the
     -- overlay running the mod IS working, and saying otherwise sends someone
     -- to fix a setting that is not the problem.
@@ -678,7 +766,9 @@ function GbcLight.status()
       local Overlay = V.require("Overlay")
       return Overlay.status() or Imu.status
     end
-    return "GBCFX OFF"
+    -- Without GBCFX there is no engine effect to be OFF; the light is simply
+    -- not asked for, which is the OVERLAY row's doing.
+    return GBCFX and "GBCFX OFF" or "OVERLAY OFF"
   end
   if shader == false then return failure or "ERROR" end
   return Imu.status
