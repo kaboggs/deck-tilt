@@ -167,6 +167,58 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
   return out
 end)
 
+-- ------- 0.2.36 moved the front door again: keep it at the front of the
+-- VIEW, not just the flat list
+--
+-- `groupRows()` (src/ui/OptionsMenu.lua) runs AFTER the hook above and
+-- rebuilds the screen the player actually sees: it emits nine fixed engine
+-- entries first (its `ORDER` table -- the four group openers, PERFORMANCE,
+-- RULESET, MODS...) and only THEN appends whatever `ORDER` does not name, in
+-- the FLAT LIST's order. Position 1 in `out` above used to mean position 1
+-- on screen; from 0.2.36 on it means position 10 -- measured on this
+-- install, in `review/w12-rows-2026-08-29/rows.tsv`, at row 11 of 49. That
+-- is the exact "row 38 of 38" failure the comment above this hook already
+-- fixed once, reopened by an engine change nobody here controls.
+--
+-- The hook cannot fix this: it only ever sees the flat list, never the
+-- rebuilt view. So this wraps the SCREEN CONSTRUCTOR instead, and moves the
+-- row actually drawn -- the one thing between the flat list and the
+-- player's eyes.
+--
+-- Group sub-pages are untouched: `OptionsMenu.new(g, { rows = members })`
+-- (the way a GROUP OPTIONS row opens its own page) sets `self.sub = true`
+-- and returns before `groupRows` ever runs, so this skips anything with
+-- `self.sub` set -- it only ever touches the top-level menu.
+--
+-- Fails open by construction: if the row is not found (a build that dropped
+-- or renamed it), the loop simply finds nothing and returns `self`
+-- unmodified -- OPTIONS renders exactly as the engine built it, never a
+-- crash, never a vanished row. If a future engine removes `groupRows`
+-- entirely and position 1 means position 1 again, this becomes a single
+-- no-op reorder (index 1 to index 1) every time OPTIONS opens -- cheap, and
+-- never wrong.
+do
+  local ok, OptionsMenu = pcall(require, "src.ui.OptionsMenu")
+  if ok and type(OptionsMenu) == "table" and type(OptionsMenu.new) == "function" then
+    local ctor = OptionsMenu.new
+    OptionsMenu.new = function(game, opts)
+      local self = ctor(game, opts)
+      if self and not self.sub and type(self.view) == "table" then
+        for i, row in ipairs(self.view) do
+          if row.id == "DECK_TILT:gyro" then
+            if i > 1 then
+              table.remove(self.view, i)
+              table.insert(self.view, 1, row)
+            end
+            break
+          end
+        end
+      end
+      return self
+    end
+  end
+end
+
 -- The manager's page writes and persists on its own; all that is left is to
 -- move our cached index so the next read agrees with it.
 mod.events:on("mod.options_changed", function(payload)
