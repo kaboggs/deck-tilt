@@ -1,3 +1,5 @@
+> **Old repository:** The latest Deck Tilt release is now at [deck-tilt-mod](https://github.com/kaboggs/deck-tilt-mod). This repository is retained for its history.
+
 # Deck Tilt
 
 A mod for the Gen 1 recomp. It moves the screen light with the motion sensor
